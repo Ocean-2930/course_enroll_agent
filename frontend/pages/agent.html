@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Agent · 수강권 관리</title>
+  <link rel="stylesheet" href="../assets/styles.css" />
+</head>
+<body>
+  <header class="app-header">
+    <span class="app-header__badge" aria-hidden="true">🎟️</span>
+    <h1 class="app-header__title">수강권 관리</h1>
+    <a class="app-header__back" href="../index.html">← 홈</a>
+  </header>
+
+  <main class="agent-wrap">
+    <section class="card" aria-label="수강권 관리 Agent">
+      <header class="card__header">
+        <button type="button" class="card__back" id="backBtn" aria-label="역할 다시 선택" hidden>&larr;</button>
+        <h2 class="card__title">
+          <span class="card__badge" id="headerBadge" aria-hidden="true">🎟️</span>
+          <span id="headerTitle">수강권 관리 Agent</span>
+        </h2>
+      </header>
+
+      <!-- 1단계: 역할 선택 -->
+      <div class="view role-view" id="roleView">
+        <p class="role-view__lead">어떤 방식으로 이용하시나요? 역할에 맞는 관리 화면으로 안내해 드릴게요.</p>
+
+        <div class="role-grid">
+          <button type="button" class="role-card" data-role="owner">
+            <span class="role-card__icon" aria-hidden="true">🏫</span>
+            <span class="role-card__text">
+              <span class="role-card__name">자영업자 (사업자)</span>
+              <span class="role-card__desc">수강권 상품 등록, 회원 수강권 발급·차감, 매출·잔여 현황을 관리해요.</span>
+            </span>
+          </button>
+
+          <button type="button" class="role-card" data-role="member">
+            <span class="role-card__icon" aria-hidden="true">🙋</span>
+            <span class="role-card__text">
+              <span class="role-card__name">회원 (이용자)</span>
+              <span class="role-card__desc">내 수강권 잔여 횟수·만료일 확인, 사용 내역 조회, 예약·환불을 요청해요.</span>
+            </span>
+          </button>
+        </div>
+      </div>
+
+      <!-- 2단계: 역할별 채팅 -->
+      <div class="view" id="chatView" hidden>
+        <div class="card__body" id="messages" aria-live="polite"></div>
+
+        <footer class="card__footer">
+          <form class="chat-form" id="chatForm">
+            <label for="chatInput" class="sr-only">메시지 입력</label>
+            <textarea
+              id="chatInput"
+              class="chat-form__input"
+              rows="1"
+              placeholder="메시지를 입력하세요…"
+              autocomplete="off"
+            ></textarea>
+            <button type="submit" class="chat-form__send" id="sendBtn" aria-label="보내기" disabled>➤</button>
+          </form>
+        </footer>
+      </div>
+    </section>
+  </main>
+
+  <script>
+    const messagesEl = document.getElementById("messages");
+    const form = document.getElementById("chatForm");
+    const input = document.getElementById("chatInput");
+    const sendBtn = document.getElementById("sendBtn");
+    const backBtn = document.getElementById("backBtn");
+    const roleView = document.getElementById("roleView");
+    const chatView = document.getElementById("chatView");
+    const headerBadge = document.getElementById("headerBadge");
+    const headerTitle = document.getElementById("headerTitle");
+    const roleButtons = document.querySelectorAll(".role-card");
+
+    // 역할별 화면 구성 (자영업자 / 회원)
+    const ROLES = {
+      owner: {
+        badge: "🏫",
+        title: "수강권 관리 · 사업자",
+        greeting: "사업자 모드예요. 수강권 상품 등록, 회원 발급·차감, 매출 현황 중 무엇을 도와드릴까요?",
+        placeholder: "예: 10회권 상품을 새로 만들어줘",
+      },
+      member: {
+        badge: "🙋",
+        title: "수강권 관리 · 회원",
+        greeting: "회원 모드예요. 내 수강권 잔여 횟수, 만료일, 사용 내역 중 무엇이 궁금하세요?",
+        placeholder: "예: 내 수강권 몇 회 남았는지 알려줘",
+      },
+    };
+
+    // 사용자 입력은 textContent로만 넣어 안전하게 렌더링
+    function addMessage(text, from) {
+      const el = document.createElement("div");
+      el.className = "message message--" + from;
+      el.textContent = text;
+      messagesEl.appendChild(el);
+      messagesEl.scrollTop = messagesEl.scrollHeight;
+    }
+
+    // 입력값 유무에 따라 보내기 버튼 활성화 + 높이 자동 조절
+    function syncInput() {
+      sendBtn.disabled = input.value.trim().length === 0;
+      input.style.height = "auto";
+      input.style.height = Math.min(input.scrollHeight, 96) + "px";
+    }
+
+    // 역할 선택 → 채팅 화면으로 전환
+    function selectRole(roleKey) {
+      const role = ROLES[roleKey];
+      if (!role) return;
+      headerBadge.textContent = role.badge;
+      headerTitle.textContent = role.title;
+      input.placeholder = role.placeholder;
+      messagesEl.innerHTML = "";
+      addMessage(role.greeting, "bot");
+      roleView.hidden = true;
+      chatView.hidden = false;
+      backBtn.hidden = false;
+      input.value = "";
+      syncInput();
+      input.focus();
+    }
+
+    // 채팅 → 역할 선택 화면으로 복귀
+    function showRolePicker() {
+      chatView.hidden = true;
+      roleView.hidden = false;
+      backBtn.hidden = true;
+      headerBadge.textContent = "🎟️";
+      headerTitle.textContent = "수강권 관리 Agent";
+    }
+
+    input.addEventListener("input", syncInput);
+
+    // Enter 전송, Shift+Enter 줄바꿈
+    input.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" && !e.shiftKey) {
+        e.preventDefault();
+        form.requestSubmit();
+      }
+    });
+
+    form.addEventListener("submit", (e) => {
+      e.preventDefault();
+      const text = input.value.trim();
+      if (!text) return;
+      addMessage(text, "user");
+      input.value = "";
+      syncInput();
+      input.focus();
+      // TODO: 백엔드 Agent API 연동 자리 (현재는 목 응답)
+    });
+
+    roleButtons.forEach((btn) => {
+      btn.addEventListener("click", () => selectRole(btn.dataset.role));
+    });
+
+    backBtn.addEventListener("click", showRolePicker);
+  </script>
+</body>
+</html>
