@@ -4,7 +4,7 @@ from pathlib import Path
 import sqlite3
 
 
-DATABASE_PATH = Path(__file__).resolve().parent.parent / "course_enroll.db"
+DATABASE_PATH = Path(__file__).resolve().parent.parent / "local_database.db"
 
 
 def connect_database(database_path: Path = DATABASE_PATH) -> sqlite3.Connection:

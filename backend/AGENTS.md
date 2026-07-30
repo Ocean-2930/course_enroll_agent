@@ -19,7 +19,7 @@
 | `requirements.txt` | 백엔드에서 사용하는 외부 Python 라이브러리 |
 | `init_venv.bat` | `.venv` 생성과 의존성 설치 |
 | `runserver.bat` | 가상환경 활성화와 8000 포트 서버 실행 |
-| `course_enroll.db` | 실행 중 생성되는 로컬 SQLite DB, Git 추적 제외 |
+| `local_database.db` | 실행 중 생성되는 로컬 SQLite DB, Git 추적 제외 |
 
 ## FastAPI 앱
 
@@ -186,7 +186,7 @@ database/db_connector.py
 DB 파일은 항상 `init_db.py`와 같은 디렉터리에 생성한다.
 
 ```python
-DATABASE_PATH = Path(__file__).resolve().parent / "course_enroll.db"
+DATABASE_PATH = Path(__file__).resolve().parent / "local_database.db"
 ```
 
 현재 작업 디렉터리에 의존하는 상대 경로는 사용하지 않는다.
