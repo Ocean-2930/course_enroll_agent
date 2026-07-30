@@ -1,0 +1,186 @@
+"""예약 및 수강 기록 REST API."""
+
+from datetime import datetime
+from typing import Literal
+
+from fastapi import APIRouter
+
+from api.common import (
+    AttendanceStatusQuery,
+    Limit,
+    Offset,
+    Order,
+)
+from api.models import (
+    AttendanceCancelRequest,
+    AttendanceCompleteRequest,
+    AttendanceRecordCreate,
+    AttendanceRecordResponse,
+    AttendanceRecordUpdate,
+    AttendanceRestoreRequest,
+    Page,
+)
+from database import db_connector
+
+
+router = APIRouter(
+    prefix="/academies/{academy_id}/attendance-records",
+    tags=["attendance-records"],
+)
+
+
+def _iso(value: datetime | None) -> str | None:
+    return (
+        value.replace(microsecond=0).isoformat()
+        if value is not None
+        else None
+    )
+
+
+@router.get(
+    "",
+    response_model=Page[AttendanceRecordResponse],
+    summary="수강 기록 목록 조회",
+)
+def list_attendance_records(
+    academy_id: int,
+    student_id: int | None = None,
+    student_pass_id: int | None = None,
+    pass_type_id_snapshot: int | None = None,
+    status: AttendanceStatusQuery | None = None,
+    class_name: str | None = None,
+    scheduled_from: datetime | None = None,
+    scheduled_to: datetime | None = None,
+    limit: Limit = 20,
+    offset: Offset = 0,
+    sort: Literal[
+        "id",
+        "scheduled_at",
+        "created_at",
+        "updated_at",
+        "status",
+        "class_name",
+    ] = "scheduled_at",
+    order: Order = "desc",
+) -> dict:
+    return db_connector.list_attendance_records(
+        academy_id,
+        student_id=student_id,
+        student_pass_id=student_pass_id,
+        pass_type_id_snapshot=pass_type_id_snapshot,
+        status=status,
+        class_name=class_name,
+        scheduled_from=_iso(scheduled_from),
+        scheduled_to=_iso(scheduled_to),
+        limit=limit,
+        offset=offset,
+        sort=sort,
+        order=order,
+    )
+
+
+@router.post(
+    "",
+    response_model=AttendanceRecordResponse,
+    status_code=201,
+    summary="예약 생성",
+    description="예약 생성 시 횟수는 차감하지 않습니다.",
+)
+def create_attendance_record(
+    academy_id: int,
+    payload: AttendanceRecordCreate,
+) -> dict:
+    return db_connector.create_attendance_record(
+        academy_id,
+        payload.model_dump(),
+    )
+
+
+@router.get(
+    "/{attendance_record_id}",
+    response_model=AttendanceRecordResponse,
+    summary="수강 기록 상세 조회",
+)
+def get_attendance_record(
+    academy_id: int,
+    attendance_record_id: int,
+) -> dict:
+    return db_connector.get_attendance_record(
+        academy_id,
+        attendance_record_id,
+    )
+
+
+@router.patch(
+    "/{attendance_record_id}",
+    response_model=AttendanceRecordResponse,
+    summary="예약 내용 수정",
+)
+def update_attendance_record(
+    academy_id: int,
+    attendance_record_id: int,
+    payload: AttendanceRecordUpdate,
+) -> dict:
+    return db_connector.update_attendance_record(
+        academy_id,
+        attendance_record_id,
+        payload.model_dump(exclude_unset=True),
+    )
+
+
+@router.post(
+    "/{attendance_record_id}/complete",
+    response_model=AttendanceRecordResponse,
+    summary="수강 완료 처리",
+    description="잔여 횟수 차감과 완료 처리를 한 트랜잭션으로 처리합니다.",
+)
+def complete_attendance(
+    academy_id: int,
+    attendance_record_id: int,
+    payload: AttendanceCompleteRequest,
+) -> dict:
+    return db_connector.complete_attendance(
+        academy_id,
+        attendance_record_id,
+        _iso(payload.completed_at),
+    )
+
+
+@router.post(
+    "/{attendance_record_id}/cancel",
+    response_model=AttendanceRecordResponse,
+    summary="예약 취소",
+)
+def cancel_attendance(
+    academy_id: int,
+    attendance_record_id: int,
+    payload: AttendanceCancelRequest,
+) -> dict:
+    return db_connector.cancel_attendance(
+        academy_id,
+        attendance_record_id,
+        cancelled_at=_iso(payload.cancelled_at),
+        memo=payload.memo,
+    )
+
+
+@router.post(
+    "/{attendance_record_id}/restore",
+    response_model=AttendanceRecordResponse,
+    summary="완료된 수강 취소 및 횟수 복구",
+    description=(
+        "현재 스키마는 append-only 감사 이력이 아니며 기존 기록을 "
+        "CANCELLED 상태로 변경합니다."
+    ),
+)
+def restore_attendance(
+    academy_id: int,
+    attendance_record_id: int,
+    payload: AttendanceRestoreRequest,
+) -> dict:
+    return db_connector.restore_attendance(
+        academy_id,
+        attendance_record_id,
+        reason=payload.reason,
+        cancelled_at=_iso(payload.cancelled_at),
+    )
