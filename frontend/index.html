@@ -1,0 +1,998 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>수강권 관리 Agent</title>
+  <style>
+    :root {
+      --color-brand: #6d5efc;
+      --color-brand-soft: #eeecff;
+      --color-text: #1e1b2e;
+      --color-muted: #6b6880;
+      --color-border: #e6e4ef;
+      --color-surface: #ffffff;
+      --color-bg: #f5f4f9;
+      --radius-card: 18px;
+      --shadow-card: 0 12px 32px rgba(30, 27, 46, 0.10);
+    }
+
+    * { box-sizing: border-box; }
+
+    html, body {
+      margin: 0;
+      height: 100%;
+    }
+
+    body {
+      font-family: "Pretendard", "Segoe UI", system-ui, -apple-system, sans-serif;
+      background: var(--color-bg);
+      color: var(--color-text);
+      min-height: 100%;
+    }
+
+    /* ===== 메인 페이지 ===== */
+    .app-header {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 16px 24px;
+      background: var(--color-surface);
+      border-bottom: 1px solid var(--color-border);
+    }
+
+    .app-header__badge {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 30px;
+      height: 30px;
+      border-radius: 9px;
+      background: var(--color-brand-soft);
+      font-size: 16px;
+    }
+
+    .app-header__title {
+      margin: 0;
+      font-size: 16px;
+      font-weight: 700;
+    }
+
+    .page {
+      max-width: 720px;
+      margin: 0 auto;
+      padding: 32px 24px 96px;
+    }
+
+    .page__title {
+      margin: 0 0 4px;
+      font-size: 22px;
+      font-weight: 700;
+    }
+
+    .page__lead {
+      margin: 0 0 24px;
+      color: var(--color-muted);
+      font-size: 15px;
+      line-height: 1.55;
+    }
+
+    .panel {
+      background: var(--color-surface);
+      border: 1px solid var(--color-border);
+      border-radius: var(--radius-card);
+      box-shadow: var(--shadow-card);
+      padding: 24px;
+    }
+
+    /* 폼 */
+    .field { margin-bottom: 18px; }
+    .field:last-of-type { margin-bottom: 0; }
+
+    .field__label {
+      display: block;
+      margin-bottom: 6px;
+      font-size: 14px;
+      font-weight: 600;
+    }
+
+    .field__req { color: var(--color-brand); }
+
+    .field__hint {
+      margin-top: 6px;
+      font-size: 12.5px;
+      color: var(--color-muted);
+    }
+
+    .input {
+      width: 100%;
+      padding: 11px 13px;
+      border: 1px solid var(--color-border);
+      border-radius: 10px;
+      background: var(--color-bg);
+      font: inherit;
+      font-size: 14px;
+      color: var(--color-text);
+    }
+
+    .input:focus {
+      outline: none;
+      border-color: var(--color-brand);
+      background: var(--color-surface);
+    }
+
+    .input[aria-invalid="true"] {
+      border-color: #d64550;
+      background: #fff5f5;
+    }
+
+    .field__error {
+      margin-top: 6px;
+      font-size: 12.5px;
+      color: #c1121f;
+    }
+
+    .field__error[hidden] { display: none; }
+
+    .form-actions {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-top: 24px;
+    }
+
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      padding: 11px 20px;
+      border: 1px solid transparent;
+      border-radius: 10px;
+      font: inherit;
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: opacity 0.15s ease, background 0.15s ease;
+    }
+
+    .btn--primary {
+      background: var(--color-brand);
+      color: #fff;
+    }
+
+    .btn--primary:hover { opacity: 0.92; }
+
+    .btn--primary:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+
+    .btn:focus-visible {
+      outline: 2px solid var(--color-brand);
+      outline-offset: 2px;
+    }
+
+    .spinner {
+      width: 15px;
+      height: 15px;
+      border: 2px solid rgba(255, 255, 255, 0.5);
+      border-top-color: #fff;
+      border-radius: 50%;
+      animation: spin 0.7s linear infinite;
+    }
+
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    @media (prefers-reduced-motion: reduce) {
+      .spinner { animation: none; }
+    }
+
+    /* 폼 상태 알림 */
+    .form-status {
+      margin-top: 20px;
+      padding: 14px 16px;
+      border-radius: 12px;
+      font-size: 14px;
+      line-height: 1.55;
+    }
+
+    .form-status[hidden] { display: none; }
+
+    .form-status--success {
+      background: #edf9f0;
+      border: 1px solid #bfe6c8;
+      color: #1c6b34;
+    }
+
+    .form-status--error {
+      background: #fdeef0;
+      border: 1px solid #f3c2c8;
+      color: #a01722;
+    }
+
+    .form-status__title { font-weight: 700; margin-bottom: 4px; }
+
+    .form-status dl {
+      margin: 8px 0 0;
+      display: grid;
+      grid-template-columns: auto 1fr;
+      gap: 4px 12px;
+      font-size: 13px;
+    }
+
+    .form-status dt { color: var(--color-muted); }
+    .form-status dd { margin: 0; word-break: break-word; }
+
+    /* ===== 채팅 오버레이 ===== */
+    .overlay {
+      position: fixed;
+      inset: 0;
+      z-index: 50;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+      background: rgba(30, 27, 46, 0.45);
+    }
+
+    .overlay[hidden] { display: none; }
+
+    .card {
+      width: 100%;
+      max-width: 800px;
+      height: 600px;
+      max-height: 100%;
+      background: var(--color-surface);
+      border: 1px solid var(--color-border);
+      border-radius: var(--radius-card);
+      box-shadow: var(--shadow-card);
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    /* 헤더: 제목 + 오른쪽 위 닫기 버튼 */
+    .card__header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 16px 18px;
+      border-bottom: 1px solid var(--color-border);
+    }
+
+    .card__title {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 15px;
+      font-weight: 600;
+      margin: 0;
+    }
+
+    .card__badge {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 28px;
+      height: 28px;
+      border-radius: 8px;
+      background: var(--color-brand-soft);
+      color: var(--color-brand);
+      font-size: 15px;
+    }
+
+    .card__close {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 32px;
+      height: 32px;
+      border: none;
+      border-radius: 8px;
+      background: transparent;
+      color: var(--color-muted);
+      font-size: 20px;
+      line-height: 1;
+      cursor: pointer;
+      transition: background 0.15s ease, color 0.15s ease;
+    }
+
+    .card__close:hover {
+      background: var(--color-brand-soft);
+      color: var(--color-text);
+    }
+
+    .card__close:focus-visible {
+      outline: 2px solid var(--color-brand);
+      outline-offset: 2px;
+    }
+
+    /* 닫은 뒤 다시 열기 위한 런처 버튼 (위쪽 고정) */
+    .launcher {
+      position: fixed;
+      top: 20px;
+      right: 20px;
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 10px 16px;
+      border: 1px solid var(--color-border);
+      border-radius: 999px;
+      background: var(--color-surface);
+      color: var(--color-text);
+      font: inherit;
+      font-size: 14px;
+      font-weight: 600;
+      box-shadow: var(--shadow-card);
+      cursor: pointer;
+      transition: transform 0.15s ease, box-shadow 0.15s ease;
+    }
+
+    .launcher:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 16px 36px rgba(30, 27, 46, 0.14);
+    }
+
+    .launcher:focus-visible {
+      outline: 2px solid var(--color-brand);
+      outline-offset: 2px;
+    }
+
+    .launcher[hidden] { display: none; }
+
+    .launcher__icon {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 26px;
+      height: 26px;
+      border-radius: 8px;
+      background: var(--color-brand-soft);
+      color: var(--color-brand);
+      font-size: 14px;
+    }
+
+    /* 헤더 뒤로가기(역할 변경) 버튼 */
+    .card__back {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 32px;
+      height: 32px;
+      margin-right: -4px;
+      border: none;
+      border-radius: 8px;
+      background: transparent;
+      color: var(--color-muted);
+      font-size: 18px;
+      line-height: 1;
+      cursor: pointer;
+      transition: background 0.15s ease, color 0.15s ease;
+    }
+
+    .card__back:hover {
+      background: var(--color-brand-soft);
+      color: var(--color-text);
+    }
+
+    .card__back:focus-visible {
+      outline: 2px solid var(--color-brand);
+      outline-offset: 2px;
+    }
+
+    .card__back[hidden] { display: none; }
+
+    /* 화면(뷰) 전환 */
+    .view { display: flex; flex-direction: column; flex: 1; min-height: 0; }
+    .view[hidden] { display: none; }
+
+    /* 역할 선택 화면 */
+    .role-view {
+      padding: 28px 24px;
+      gap: 18px;
+      overflow-y: auto;
+    }
+
+    .role-view__lead {
+      margin: 6px 2px 2px;
+      color: var(--color-muted);
+      font-size: 15px;
+      line-height: 1.5;
+    }
+
+    /* 넓은 화면에서는 역할 카드를 2열로 */
+    .role-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 16px;
+    }
+
+    .role-card {
+      display: flex;
+      flex-direction: column;
+      align-items: flex-start;
+      gap: 14px;
+      width: 100%;
+      height: 100%;
+      text-align: left;
+      padding: 22px;
+      border: 1px solid var(--color-border);
+      border-radius: 14px;
+      background: var(--color-surface);
+      cursor: pointer;
+      transition: border-color 0.15s ease, box-shadow 0.15s ease, transform 0.15s ease;
+    }
+
+    .role-card:hover {
+      border-color: var(--color-brand);
+      box-shadow: var(--shadow-card);
+      transform: translateY(-1px);
+    }
+
+    .role-card:focus-visible {
+      outline: 2px solid var(--color-brand);
+      outline-offset: 2px;
+    }
+
+    .role-card__icon {
+      flex-shrink: 0;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 46px;
+      height: 46px;
+      border-radius: 12px;
+      background: var(--color-brand-soft);
+      font-size: 22px;
+    }
+
+    .role-card__text { display: flex; flex-direction: column; gap: 3px; }
+
+    .role-card__name {
+      font-size: 15px;
+      font-weight: 600;
+      color: var(--color-text);
+    }
+
+    .role-card__desc {
+      font-size: 13px;
+      line-height: 1.45;
+      color: var(--color-muted);
+    }
+
+    /* 좁은 화면: 카드 높이/역할 2열/말풍선 폭을 완화 */
+    @media (max-width: 720px) {
+      .overlay { padding: 12px; align-items: stretch; }
+      .card { height: auto; min-height: 520px; max-width: 100%; flex: 1; }
+      .role-grid { grid-template-columns: 1fr; }
+      .message { max-width: 82%; }
+      .launcher { top: 12px; right: 12px; }
+      .page { padding: 24px 16px 96px; }
+    }
+
+    /* 본문: 채팅 메시지 영역 */
+    .card__body {
+      flex: 1;
+      overflow-y: auto;
+      padding: 18px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .message {
+      max-width: 66%;
+      padding: 10px 14px;
+      border-radius: 14px;
+      font-size: 14px;
+      line-height: 1.5;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+
+    .message--bot {
+      align-self: flex-start;
+      background: var(--color-brand-soft);
+      color: var(--color-text);
+      border-bottom-left-radius: 4px;
+    }
+
+    .message--user {
+      align-self: flex-end;
+      background: var(--color-brand);
+      color: #fff;
+      border-bottom-right-radius: 4px;
+    }
+
+    /* 하단: 채팅 입력창 */
+    .card__footer {
+      border-top: 1px solid var(--color-border);
+      padding: 12px;
+    }
+
+    .chat-form {
+      display: flex;
+      align-items: flex-end;
+      gap: 8px;
+      background: var(--color-bg);
+      border: 1px solid var(--color-border);
+      border-radius: 14px;
+      padding: 6px 6px 6px 12px;
+    }
+
+    .chat-form:focus-within {
+      border-color: var(--color-brand);
+    }
+
+    .chat-form__input {
+      flex: 1;
+      border: none;
+      background: transparent;
+      resize: none;
+      font: inherit;
+      font-size: 14px;
+      line-height: 1.5;
+      color: var(--color-text);
+      max-height: 96px;
+      padding: 6px 0;
+    }
+
+    .chat-form__input:focus {
+      outline: none;
+    }
+
+    .chat-form__send {
+      flex-shrink: 0;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 36px;
+      height: 36px;
+      border: none;
+      border-radius: 10px;
+      background: var(--color-brand);
+      color: #fff;
+      font-size: 16px;
+      cursor: pointer;
+      transition: opacity 0.15s ease;
+    }
+
+    .chat-form__send:hover { opacity: 0.9; }
+
+    .chat-form__send:disabled {
+      opacity: 0.4;
+      cursor: not-allowed;
+    }
+
+    .chat-form__send:focus-visible {
+      outline: 2px solid var(--color-brand);
+      outline-offset: 2px;
+    }
+  </style>
+</head>
+<body>
+  <!-- 상단 헤더 -->
+  <header class="app-header">
+    <span class="app-header__badge" aria-hidden="true">🎟️</span>
+    <h1 class="app-header__title">수강권 관리</h1>
+  </header>
+
+  <!-- 메인 페이지: 아카데미 생성 -->
+  <main class="page">
+    <h2 class="page__title">아카데미 생성</h2>
+    <p class="page__lead">새 아카데미를 등록하면 이후 수강권 상품과 회원을 이 아카데미 아래에서 관리할 수 있어요.</p>
+
+    <section class="panel">
+      <form id="academyForm" novalidate>
+        <div class="field">
+          <label class="field__label" for="academyName">
+            아카데미 이름 <span class="field__req" aria-hidden="true">*</span>
+          </label>
+          <input
+            class="input"
+            type="text"
+            id="academyName"
+            name="name"
+            maxlength="200"
+            placeholder="예: 강남 필라테스 스튜디오"
+            autocomplete="organization"
+            required
+          />
+          <p class="field__error" id="academyNameError" hidden></p>
+        </div>
+
+        <div class="field">
+          <label class="field__label" for="academyPhone">전화번호</label>
+          <input
+            class="input"
+            type="tel"
+            id="academyPhone"
+            name="phone"
+            maxlength="50"
+            placeholder="예: 02-123-4567"
+            autocomplete="tel"
+          />
+          <p class="field__hint">선택 입력입니다.</p>
+        </div>
+
+        <div class="field">
+          <label class="field__label" for="academyAddress">주소</label>
+          <input
+            class="input"
+            type="text"
+            id="academyAddress"
+            name="address"
+            maxlength="500"
+            placeholder="예: 서울시 강남구 테헤란로 123"
+            autocomplete="street-address"
+          />
+          <p class="field__hint">선택 입력입니다.</p>
+        </div>
+
+        <div class="form-actions">
+          <button type="submit" class="btn btn--primary" id="academySubmit">아카데미 생성</button>
+        </div>
+
+        <div class="form-status" id="academyStatus" role="status" aria-live="polite" hidden></div>
+      </form>
+    </section>
+  </main>
+
+  <!-- 수강권 관리 Agent 실행 버튼 -->
+  <button type="button" class="launcher" id="launcherBtn">
+    <span class="launcher__icon" aria-hidden="true">🎟️</span>
+    수강권 관리 Agent 열기
+  </button>
+
+  <!-- 채팅 오버레이 -->
+  <div class="overlay" id="overlay" hidden>
+  <section class="card" role="dialog" aria-modal="true" aria-label="수강권 관리 Agent 채팅">
+    <header class="card__header">
+      <button type="button" class="card__back" id="backBtn" aria-label="역할 다시 선택" hidden>&larr;</button>
+      <h1 class="card__title">
+        <span class="card__badge" id="headerBadge" aria-hidden="true">🎟️</span>
+        <span id="headerTitle">수강권 관리 Agent</span>
+      </h1>
+      <button type="button" class="card__close" id="closeBtn" aria-label="닫기">&times;</button>
+    </header>
+
+    <!-- 1단계: 역할 선택 -->
+    <div class="view role-view" id="roleView">
+      <p class="role-view__lead">어떤 방식으로 이용하시나요? 역할에 맞는 관리 화면으로 안내해 드릴게요.</p>
+
+      <div class="role-grid">
+        <button type="button" class="role-card" data-role="owner">
+          <span class="role-card__icon" aria-hidden="true">🏫</span>
+          <span class="role-card__text">
+            <span class="role-card__name">자영업자 (사업자)</span>
+            <span class="role-card__desc">수강권 상품 등록, 회원 수강권 발급·차감, 매출·잔여 현황을 관리해요.</span>
+          </span>
+        </button>
+
+        <button type="button" class="role-card" data-role="member">
+          <span class="role-card__icon" aria-hidden="true">🙋</span>
+          <span class="role-card__text">
+            <span class="role-card__name">회원 (이용자)</span>
+            <span class="role-card__desc">내 수강권 잔여 횟수·만료일 확인, 사용 내역 조회, 예약·환불을 요청해요.</span>
+          </span>
+        </button>
+      </div>
+    </div>
+
+    <!-- 2단계: 역할별 채팅 -->
+    <div class="view" id="chatView" hidden>
+      <div class="card__body" id="messages" aria-live="polite"></div>
+
+      <footer class="card__footer">
+        <form class="chat-form" id="chatForm">
+          <label for="chatInput" class="sr-only" style="position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);">메시지 입력</label>
+          <textarea
+            id="chatInput"
+            class="chat-form__input"
+            rows="1"
+            placeholder="메시지를 입력하세요…"
+            autocomplete="off"
+          ></textarea>
+          <button type="submit" class="chat-form__send" id="sendBtn" aria-label="보내기" disabled>➤</button>
+        </form>
+      </footer>
+    </div>
+  </section>
+  </div>
+
+  <script>
+    // =========================================================
+    // API 클라이언트 — 백엔드 경계를 이 한 곳에서만 관리한다.
+    // 실제 URL/헤더는 화면 로직이 알지 못하게 어댑터로 감싼다.
+    // =========================================================
+    const API_BASE_URL =
+      (window.__API_BASE_URL__ || "http://127.0.0.1:8000").replace(/\/+$/, "");
+
+    async function apiRequest(path, options = {}) {
+      const res = await fetch(API_BASE_URL + path, {
+        headers: { "Content-Type": "application/json" },
+        ...options,
+      });
+      let body = null;
+      try {
+        body = await res.json();
+      } catch (_) {
+        /* 본문이 없거나 JSON이 아님 */
+      }
+      if (!res.ok) {
+        const err = new Error("API 요청 실패");
+        err.status = res.status;
+        err.body = body;
+        throw err;
+      }
+      return body;
+    }
+
+    const academyApi = {
+      // POST /api/academies → 생성된 아카데미 객체 반환
+      create(payload) {
+        return apiRequest("/api/academies", {
+          method: "POST",
+          body: JSON.stringify(payload),
+        });
+      },
+    };
+
+    // 서버/네트워크 오류를 사용자에게 보여줄 문구로 변환
+    function messageFromError(err) {
+      if (err.status === undefined) {
+        return "서버에 연결할 수 없어요. 백엔드가 실행 중인지 확인한 뒤 다시 시도해 주세요.";
+      }
+      if (err.body && err.body.error && err.body.error.message) {
+        return err.body.error.message; // 예측된 업무 오류
+      }
+      if (err.body && Array.isArray(err.body.detail) && err.body.detail[0]) {
+        return err.body.detail[0].msg || "입력값을 다시 확인해 주세요.";
+      }
+      return `요청에 실패했어요. (HTTP ${err.status})`;
+    }
+
+    // =========================================================
+    // 아카데미 생성 폼
+    // =========================================================
+    const academyForm = document.getElementById("academyForm");
+    const academyName = document.getElementById("academyName");
+    const academyPhone = document.getElementById("academyPhone");
+    const academyAddress = document.getElementById("academyAddress");
+    const academyNameError = document.getElementById("academyNameError");
+    const academySubmit = document.getElementById("academySubmit");
+    const academyStatus = document.getElementById("academyStatus");
+
+    function setNameError(msg) {
+      if (msg) {
+        academyNameError.textContent = msg;
+        academyNameError.hidden = false;
+        academyName.setAttribute("aria-invalid", "true");
+      } else {
+        academyNameError.hidden = true;
+        academyName.removeAttribute("aria-invalid");
+      }
+    }
+
+    function setSubmitting(on) {
+      academySubmit.disabled = on;
+      academySubmit.textContent = "";
+      if (on) {
+        const sp = document.createElement("span");
+        sp.className = "spinner";
+        academySubmit.append(sp, document.createTextNode("생성 중…"));
+      } else {
+        academySubmit.textContent = "아카데미 생성";
+      }
+    }
+
+    // 결과는 DOM API로만 구성해 사용자 입력/서버 응답을 안전하게 렌더링
+    function showAcademySuccess(academy) {
+      academyStatus.className = "form-status form-status--success";
+      academyStatus.textContent = "";
+      const title = document.createElement("div");
+      title.className = "form-status__title";
+      title.textContent = "아카데미가 생성되었습니다.";
+      const dl = document.createElement("dl");
+      const rows = [
+        ["ID", String(academy.id)],
+        ["이름", academy.name],
+        ["전화번호", academy.phone || "-"],
+        ["주소", academy.address || "-"],
+      ];
+      for (const [key, value] of rows) {
+        const dt = document.createElement("dt");
+        dt.textContent = key;
+        const dd = document.createElement("dd");
+        dd.textContent = value;
+        dl.append(dt, dd);
+      }
+      academyStatus.append(title, dl);
+      academyStatus.hidden = false;
+    }
+
+    function showAcademyError(message) {
+      academyStatus.className = "form-status form-status--error";
+      academyStatus.textContent = "";
+      const title = document.createElement("div");
+      title.className = "form-status__title";
+      title.textContent = "생성에 실패했습니다.";
+      const body = document.createElement("div");
+      body.textContent = message;
+      academyStatus.append(title, body);
+      academyStatus.hidden = false;
+    }
+
+    // 이름을 입력하기 시작하면 오류 표시를 해제
+    academyName.addEventListener("input", () => {
+      if (academyName.value.trim()) setNameError("");
+    });
+
+    academyForm.addEventListener("submit", async (e) => {
+      e.preventDefault();
+
+      const name = academyName.value.trim();
+      if (!name) {
+        setNameError("아카데미 이름을 입력해 주세요.");
+        academyName.focus();
+        return;
+      }
+      setNameError("");
+      academyStatus.hidden = true;
+
+      // 백엔드가 허용하는 필드만 전송(빈 선택값은 생략)
+      const payload = { name };
+      const phone = academyPhone.value.trim();
+      const address = academyAddress.value.trim();
+      if (phone) payload.phone = phone;
+      if (address) payload.address = address;
+
+      setSubmitting(true);
+      try {
+        const academy = await academyApi.create(payload);
+        showAcademySuccess(academy);
+        academyForm.reset();
+      } catch (err) {
+        showAcademyError(messageFromError(err));
+      } finally {
+        setSubmitting(false);
+      }
+    });
+
+    // =========================================================
+    // 수강권 관리 Agent (오버레이 채팅)
+    // =========================================================
+    const overlay = document.getElementById("overlay");
+    const messagesEl = document.getElementById("messages");
+    const form = document.getElementById("chatForm");
+    const input = document.getElementById("chatInput");
+    const sendBtn = document.getElementById("sendBtn");
+    const closeBtn = document.getElementById("closeBtn");
+    const backBtn = document.getElementById("backBtn");
+    const launcherBtn = document.getElementById("launcherBtn");
+    const card = document.querySelector(".card");
+    const roleView = document.getElementById("roleView");
+    const chatView = document.getElementById("chatView");
+    const headerBadge = document.getElementById("headerBadge");
+    const headerTitle = document.getElementById("headerTitle");
+    const roleButtons = document.querySelectorAll(".role-card");
+
+    // 역할별 화면 구성 (자영업자 / 회원)
+    const ROLES = {
+      owner: {
+        badge: "🏫",
+        title: "수강권 관리 · 사업자",
+        greeting: "사업자 모드예요. 수강권 상품 등록, 회원 발급·차감, 매출 현황 중 무엇을 도와드릴까요?",
+        placeholder: "예: 10회권 상품을 새로 만들어줘",
+      },
+      member: {
+        badge: "🙋",
+        title: "수강권 관리 · 회원",
+        greeting: "회원 모드예요. 내 수강권 잔여 횟수, 만료일, 사용 내역 중 무엇이 궁금하세요?",
+        placeholder: "예: 내 수강권 몇 회 남았는지 알려줘",
+      },
+    };
+
+    // 역할 선택 → 채팅 화면으로 전환
+    function selectRole(roleKey) {
+      const role = ROLES[roleKey];
+      if (!role) return;
+      headerBadge.textContent = role.badge;
+      headerTitle.textContent = role.title;
+      input.placeholder = role.placeholder;
+      messagesEl.innerHTML = "";
+      addMessage(role.greeting, "bot");
+      roleView.hidden = true;
+      chatView.hidden = false;
+      backBtn.hidden = false;
+      input.value = "";
+      syncInput();
+      input.focus();
+    }
+
+    // 채팅 → 역할 선택 화면으로 복귀
+    function showRolePicker() {
+      chatView.hidden = true;
+      roleView.hidden = false;
+      backBtn.hidden = true;
+      headerBadge.textContent = "🎟️";
+      headerTitle.textContent = "수강권 관리 Agent";
+    }
+
+    // 사용자 입력은 textContent로만 넣어 안전하게 렌더링
+    function addMessage(text, from) {
+      const el = document.createElement("div");
+      el.className = "message message--" + from;
+      el.textContent = text;
+      messagesEl.appendChild(el);
+      messagesEl.scrollTop = messagesEl.scrollHeight;
+    }
+
+    // 입력값 유무에 따라 보내기 버튼 활성화 + 높이 자동 조절
+    function syncInput() {
+      sendBtn.disabled = input.value.trim().length === 0;
+      input.style.height = "auto";
+      input.style.height = Math.min(input.scrollHeight, 96) + "px";
+    }
+
+    input.addEventListener("input", syncInput);
+
+    // Enter 전송, Shift+Enter 줄바꿈
+    input.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" && !e.shiftKey) {
+        e.preventDefault();
+        form.requestSubmit();
+      }
+    });
+
+    form.addEventListener("submit", (e) => {
+      e.preventDefault();
+      const text = input.value.trim();
+      if (!text) return;
+      addMessage(text, "user");
+      input.value = "";
+      syncInput();
+      input.focus();
+      // TODO: 백엔드 API 연동 자리 (현재는 목 응답)
+    });
+
+    roleButtons.forEach((btn) => {
+      btn.addEventListener("click", () => selectRole(btn.dataset.role));
+    });
+
+    backBtn.addEventListener("click", showRolePicker);
+
+    // 오버레이 열기/닫기 + 포커스 관리
+    let lastFocused = null;
+
+    function openAgent() {
+      lastFocused = document.activeElement;
+      overlay.hidden = false;
+      launcherBtn.hidden = true;
+      // 채팅 중이면 입력창, 아니면 첫 역할 버튼으로 포커스
+      (chatView.hidden ? roleButtons[0] : input).focus();
+    }
+
+    function closeAgent() {
+      overlay.hidden = true;
+      launcherBtn.hidden = false;
+      (lastFocused && document.contains(lastFocused) ? lastFocused : launcherBtn).focus();
+    }
+
+    launcherBtn.addEventListener("click", openAgent);
+    closeBtn.addEventListener("click", closeAgent);
+
+    // 배경(오버레이) 클릭으로 닫기
+    overlay.addEventListener("mousedown", (e) => {
+      if (e.target === overlay) closeAgent();
+    });
+
+    // Escape로 닫기
+    document.addEventListener("keydown", (e) => {
+      if (e.key === "Escape" && !overlay.hidden) closeAgent();
+    });
+  </script>
+</body>
+</html>
