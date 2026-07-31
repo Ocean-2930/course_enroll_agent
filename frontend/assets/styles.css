@@ -1064,6 +1064,388 @@ select.input:disabled {
   color: var(--color-muted);
 }
 
+/* =========================================================
+   회원 포털 (pages/member.html)
+   ========================================================= */
+.portal-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  padding: 16px 18px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-card);
+}
+
+.portal-bar__who {
+  flex: 1 1 240px;
+  min-width: 0;
+}
+
+.portal-bar__academy {
+  display: block;
+  font-size: 12.5px;
+  color: var(--color-muted);
+}
+
+.portal-bar__name {
+  display: block;
+  margin-top: 2px;
+  font-size: 17px;
+  font-weight: 700;
+}
+
+.portal-bar__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+/* 상품 카드 격자 */
+.product-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+  gap: 12px;
+}
+
+.product-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 16px;
+  border: 1px solid var(--color-border);
+  border-radius: 12px;
+  background: var(--color-bg);
+}
+
+.product-card__name {
+  font-size: 14.5px;
+  font-weight: 700;
+  word-break: break-word;
+}
+
+.product-card__desc {
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--color-muted);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.product-card__meta {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  font-size: 12.5px;
+  color: var(--color-muted);
+}
+
+.product-card__price {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--color-brand);
+}
+
+.product-card__buy {
+  margin-top: auto;
+}
+
+/* 내 수강권 카드 */
+.owned-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 16px;
+  border: 1px solid var(--color-border);
+  border-radius: 12px;
+  background: var(--color-surface);
+}
+
+.owned-card--muted { background: var(--color-bg); }
+
+.owned-card__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.owned-card__name { font-size: 14.5px; font-weight: 700; }
+
+.owned-card__bar {
+  height: 8px;
+  border-radius: 999px;
+  background: var(--color-bg);
+  overflow: hidden;
+}
+
+.owned-card__fill {
+  height: 100%;
+  border-radius: 999px;
+  background: var(--color-brand);
+}
+
+.owned-card__grid {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 3px 12px;
+  margin: 0;
+  font-size: 12.5px;
+}
+
+.owned-card__grid dt { color: var(--color-muted); }
+.owned-card__grid dd { margin: 0; }
+
+/* 예약 카드 목록 */
+.reservation-card {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 14px 16px;
+  border: 1px solid var(--color-border);
+  border-radius: 12px;
+  background: var(--color-surface);
+}
+
+.reservation-card--active {
+  border-color: var(--color-brand);
+  background: var(--color-brand-soft);
+}
+
+.reservation-card__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.reservation-card__title { font-size: 14px; font-weight: 700; }
+
+.reservation-card__time {
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+
+.reservation-card__meta {
+  font-size: 12.5px;
+  color: var(--color-muted);
+}
+
+/* 문의 대화 */
+.thread {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.thread__item {
+  max-width: 82%;
+  padding: 10px 14px;
+  border-radius: 14px;
+  font-size: 13.5px;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.thread__item--student {
+  align-self: flex-end;
+  background: var(--color-brand);
+  color: #fff;
+  border-bottom-right-radius: 4px;
+}
+
+.thread__item--academy {
+  align-self: flex-start;
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-bottom-left-radius: 4px;
+}
+
+.thread__time {
+  display: block;
+  margin-top: 4px;
+  font-size: 11px;
+  opacity: 0.75;
+}
+
+/* 상태 배지 추가분 */
+.badge--checked-in {
+  background: #eaf3ff;
+  border-color: #c3dcff;
+  color: #1d4ed8;
+}
+
+.badge--open {
+  background: #fff6e8;
+  border-color: #f4dcb4;
+  color: #8a5a06;
+}
+
+.badge--answered {
+  background: var(--color-success-bg);
+  border-color: var(--color-success-border);
+  color: var(--color-success-text);
+}
+
+.badge--closed {
+  background: var(--color-bg);
+  border-color: var(--color-border);
+  color: var(--color-muted);
+}
+
+/* 월간 수강 일정 달력 */
+.calendar__nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.calendar__month {
+  margin: 0 0 12px;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.calendar__grid {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.calendar__weekdays {
+  margin-bottom: 6px;
+}
+
+.calendar__weekday {
+  padding: 4px 0;
+  text-align: center;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--color-muted);
+}
+
+.calendar__weekday--sun { color: #c2415a; }
+.calendar__weekday--sat { color: #3b6fd4; }
+
+.calendar-day {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  min-height: 78px;
+  padding: 7px 8px;
+  border: 1px solid var(--color-border);
+  border-radius: 10px;
+  background: var(--color-surface);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+
+.calendar-day:hover { border-color: var(--color-brand); }
+
+.calendar-day:focus-visible {
+  outline: 2px solid var(--color-brand);
+  outline-offset: 2px;
+}
+
+.calendar-day--muted {
+  background: var(--color-bg);
+  opacity: 0.55;
+}
+
+.calendar-day--today {
+  border-color: var(--color-brand);
+  background: var(--color-brand-soft);
+}
+
+.calendar-day--selected {
+  box-shadow: inset 0 0 0 2px var(--color-brand);
+}
+
+.calendar-day__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 4px;
+}
+
+.calendar-day__number {
+  font-size: 13px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.calendar-day--sun .calendar-day__number { color: #c2415a; }
+.calendar-day--sat .calendar-day__number { color: #3b6fd4; }
+
+.calendar-day__today {
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: var(--color-brand);
+  color: #fff;
+  font-size: 10.5px;
+  font-weight: 700;
+  line-height: 1.5;
+}
+
+.calendar-day__counts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px;
+}
+
+.calendar-count {
+  padding: 1px 6px;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  font-size: 10.5px;
+  font-weight: 700;
+  line-height: 1.6;
+  font-variant-numeric: tabular-nums;
+}
+
+.calendar-count--reserved {
+  background: #ffffff;
+  border-color: #d9d4ff;
+  color: var(--color-brand);
+}
+
+.calendar-count--completed {
+  background: var(--color-success-bg);
+  border-color: var(--color-success-border);
+  color: var(--color-success-text);
+}
+
+.calendar-count--cancelled {
+  background: var(--color-error-bg);
+  border-color: var(--color-error-border);
+  color: var(--color-error-text);
+}
+
+/* 선택한 날짜의 일정 목록 */
+.day-schedule {
+  margin-top: 18px;
+  padding-top: 16px;
+  border-top: 1px solid var(--color-border);
+}
+
+.day-schedule__title {
+  margin: 0 0 10px;
+  font-size: 13.5px;
+  font-weight: 700;
+}
+
+.mini-list__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+
 /* 표 */
 .table-wrap {
   overflow-x: auto;
@@ -1345,6 +1727,11 @@ select.input:disabled {
 
   .dash { padding: 18px 14px 72px; }
   .section { padding: 16px 14px; }
+  .calendar__grid { gap: 4px; }
+  .calendar-day { min-height: 58px; padding: 5px; gap: 3px; }
+  .calendar-day__number { font-size: 12px; }
+  .calendar-day__today { padding: 0 5px; font-size: 9.5px; }
+  .calendar-count { padding: 0 4px; font-size: 9.5px; }
   .kpi-grid { grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); }
   .kpi__value { font-size: 19px; }
   .bar-row { grid-template-columns: minmax(72px, 110px) 1fr auto; }
@@ -1352,4 +1739,8 @@ select.input:disabled {
   .drawer__body { max-height: calc(92vh - 128px); }
   .detail-grid { grid-template-columns: 1fr; gap: 2px 0; }
   .detail-grid dd { margin-bottom: 8px; }
+  .product-grid { grid-template-columns: 1fr; }
+  .portal-bar__actions { width: 100%; }
+  .portal-bar__actions .btn { flex: 1; }
+  .thread__item { max-width: 92%; }
 }

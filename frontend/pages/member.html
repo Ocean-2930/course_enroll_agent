@@ -1,0 +1,1766 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>회원 포털 · 수강권 관리</title>
+  <link rel="stylesheet" href="../assets/styles.css" />
+</head>
+<body>
+  <header class="app-header">
+    <span class="app-header__badge" aria-hidden="true">🙋</span>
+    <h1 class="app-header__title">회원 포털</h1>
+    <a class="app-header__back" href="../index.html">← 홈</a>
+  </header>
+
+  <main class="dash">
+    <!-- 현재 로그인 개념이 없어 URL 의 academy_id·student_id 로 대상을 정한다. -->
+    <section class="portal-bar" aria-label="회원 정보">
+      <div class="portal-bar__who">
+        <span class="portal-bar__academy" id="portalAcademy">아카데미</span>
+        <span class="portal-bar__name" id="portalStudent">회원</span>
+      </div>
+      <div class="portal-bar__actions">
+        <a class="btn btn--ghost btn--sm" href="agent.html">계정 다시 선택</a>
+        <a class="btn btn--ghost btn--sm" href="../index.html">홈으로</a>
+      </div>
+      <p class="dash-bar__status" id="portalStatus">회원 정보를 불러오는 중…</p>
+    </section>
+
+    <!-- 홈에서 바로 들어오면 여기서 아카데미·회원을 고른다.
+         로그인이 아니라 화면 선택일 뿐이다. -->
+    <section class="section" id="pickerSection" aria-label="회원 선택" hidden>
+      <div class="section__head">
+        <h2 class="section__title">어떤 회원으로 볼까요?</h2>
+      </div>
+      <p class="section__desc">
+        아직 로그인 기능이 없어 아카데미와 본인 계정을 직접 선택합니다.
+      </p>
+      <div class="field">
+        <label class="field__label" for="pickAcademy">
+          아카데미 <span class="field__req" aria-hidden="true">*</span>
+        </label>
+        <select class="input" id="pickAcademy">
+          <option value="">아카데미를 불러오는 중…</option>
+        </select>
+      </div>
+      <div class="field">
+        <label class="field__label" for="pickStudent">
+          회원 <span class="field__req" aria-hidden="true">*</span>
+        </label>
+        <select class="input" id="pickStudent" disabled>
+          <option value="">아카데미를 먼저 선택하세요</option>
+        </select>
+      </div>
+      <div class="form-status" id="pickStatus" role="status" aria-live="polite" hidden></div>
+      <div class="form-actions">
+        <button type="button" class="btn btn--primary" id="pickSubmit" disabled>시작하기</button>
+      </div>
+    </section>
+
+    <nav class="tabs" id="tabs" role="tablist" aria-label="회원 화면">
+      <button type="button" class="tab" role="tab" id="tab-home"
+        aria-controls="panel-home" aria-selected="true" data-tab="home">홈</button>
+      <button type="button" class="tab" role="tab" id="tab-passes"
+        aria-controls="panel-passes" aria-selected="false" data-tab="passes">수강권</button>
+      <button type="button" class="tab" role="tab" id="tab-reservations"
+        aria-controls="panel-reservations" aria-selected="false" data-tab="reservations">예약</button>
+      <button type="button" class="tab" role="tab" id="tab-attendance"
+        aria-controls="panel-attendance" aria-selected="false" data-tab="attendance">출석·퇴실</button>
+      <button type="button" class="tab" role="tab" id="tab-inquiries"
+        aria-controls="panel-inquiries" aria-selected="false" data-tab="inquiries">문의</button>
+    </nav>
+
+    <!-- 홈 -->
+    <div class="tab-panel" id="panel-home" role="tabpanel" aria-labelledby="tab-home">
+      <section class="section">
+        <div class="section__head">
+          <h2 class="section__title">내 현황</h2>
+          <button type="button" class="btn btn--ghost btn--sm" id="homeRefreshBtn">새로고침</button>
+        </div>
+        <div class="state" id="homeState" hidden></div>
+        <div class="kpi-grid" id="homeKpis"></div>
+
+        <div class="subsection">
+          <h3 class="subsection__title">지금 할 일</h3>
+          <div id="homeNow"></div>
+        </div>
+
+        <div class="subsection">
+          <h3 class="subsection__title">빠른 이동</h3>
+          <div class="row-actions">
+            <button type="button" class="btn btn--primary btn--sm" data-go="passes">수강권 구매</button>
+            <button type="button" class="btn btn--ghost btn--sm" data-go="reservations">예약하기</button>
+            <button type="button" class="btn btn--ghost btn--sm" data-go="attendance">출석·퇴실</button>
+            <button type="button" class="btn btn--ghost btn--sm" data-go="inquiries">문의하기</button>
+          </div>
+        </div>
+
+        <div class="subsection">
+          <h3 class="subsection__title">최근 이용 내역</h3>
+          <div class="mini-list" id="homeRecent"></div>
+        </div>
+      </section>
+    </div>
+
+    <!-- 수강권 -->
+    <div class="tab-panel" id="panel-passes" role="tabpanel" aria-labelledby="tab-passes" hidden>
+      <section class="section">
+        <div class="section__head">
+          <h2 class="section__title">구매 가능한 수강권</h2>
+          <button type="button" class="btn btn--ghost btn--sm" id="productRefreshBtn">새로고침</button>
+        </div>
+        <div class="state" id="productState" hidden></div>
+        <div class="product-grid" id="productGrid"></div>
+        <p class="note">현재 버전에서는 별도 결제 없이 수강권이 즉시 등록됩니다.</p>
+      </section>
+
+      <section class="section">
+        <div class="section__head">
+          <h2 class="section__title">내 수강권</h2>
+        </div>
+        <div class="state" id="myPassState" hidden></div>
+        <div class="product-grid" id="myPassGrid"></div>
+      </section>
+    </div>
+
+    <!-- 예약 -->
+    <div class="tab-panel" id="panel-reservations" role="tabpanel" aria-labelledby="tab-reservations" hidden>
+      <section class="section">
+        <div class="section__head">
+          <h2 class="section__title">예약하기</h2>
+        </div>
+        <form id="reserveForm" novalidate>
+          <div class="field">
+            <label class="field__label" for="reservePass">
+              사용할 수강권 <span class="field__req" aria-hidden="true">*</span>
+            </label>
+            <select class="input" id="reservePass"></select>
+            <p class="field__hint" id="reservePassHint">
+              잔여 1회 이상이고 만료되지 않은 수강권만 선택할 수 있어요.
+            </p>
+          </div>
+          <div class="field">
+            <label class="field__label" for="reserveClass">
+              수업명 <span class="field__req" aria-hidden="true">*</span>
+            </label>
+            <input class="input" id="reserveClass" type="text" maxlength="200" autocomplete="off" />
+          </div>
+          <div class="field">
+            <label class="field__label" for="reserveAt">
+              수업 시작 일시 <span class="field__req" aria-hidden="true">*</span>
+            </label>
+            <input class="input" id="reserveAt" type="datetime-local" />
+            <p class="field__hint" id="reserveEndHint">
+              종료 시각은 수강권의 1회 수업 시간으로 계산됩니다.
+            </p>
+          </div>
+          <div class="field">
+            <label class="field__label" for="reserveMemo">메모</label>
+            <textarea class="input" id="reserveMemo" rows="2"></textarea>
+          </div>
+          <div class="form-status" id="reserveStatus" role="status" aria-live="polite" hidden></div>
+          <div class="form-actions">
+            <button type="submit" class="btn btn--primary" id="reserveSubmit">예약하기</button>
+          </div>
+        </form>
+      </section>
+
+      <section class="section">
+        <div class="section__head">
+          <h2 class="section__title">내 예약</h2>
+        </div>
+        <div class="chip-row" id="reservationFilter">
+          <button type="button" class="chip" data-status="" aria-pressed="true">전체</button>
+          <button type="button" class="chip" data-status="RESERVED" aria-pressed="false">예정</button>
+          <button type="button" class="chip" data-status="CHECKED_IN" aria-pressed="false">체크인 중</button>
+          <button type="button" class="chip" data-status="COMPLETED" aria-pressed="false">완료</button>
+          <button type="button" class="chip" data-status="CANCELLED" aria-pressed="false">취소</button>
+        </div>
+        <div class="state" id="reservationState" hidden></div>
+        <div class="mini-list" id="reservationList"></div>
+      </section>
+    </div>
+
+    <!-- 출석·퇴실 -->
+    <div class="tab-panel" id="panel-attendance" role="tabpanel" aria-labelledby="tab-attendance" hidden>
+      <section class="section">
+        <div class="section__head">
+          <h2 class="section__title">출석 · 퇴실</h2>
+          <button type="button" class="btn btn--ghost btn--sm" id="attendanceRefreshBtn">새로고침</button>
+        </div>
+        <p class="section__desc">
+          출석하면 수업이 시작되고, 퇴실할 때 수강권이 1회 차감됩니다.
+        </p>
+        <div class="state" id="attendanceState" hidden></div>
+        <div class="mini-list" id="attendanceList"></div>
+      </section>
+    </div>
+
+    <!-- 문의 -->
+    <div class="tab-panel" id="panel-inquiries" role="tabpanel" aria-labelledby="tab-inquiries" hidden>
+      <section class="section">
+        <div class="section__head">
+          <h2 class="section__title">문의하기</h2>
+        </div>
+        <form id="inquiryForm" novalidate>
+          <div class="filter-grid">
+            <div>
+              <label class="field__label" for="inquiryCategory">
+                문의 유형 <span class="field__req" aria-hidden="true">*</span>
+              </label>
+              <select class="input" id="inquiryCategory"></select>
+            </div>
+            <div>
+              <label class="field__label" for="inquiryPass">관련 수강권</label>
+              <select class="input" id="inquiryPass"></select>
+            </div>
+            <div>
+              <label class="field__label" for="inquiryRecord">관련 예약</label>
+              <select class="input" id="inquiryRecord"></select>
+            </div>
+          </div>
+          <div class="field">
+            <label class="field__label" for="inquiryTitle">
+              제목 <span class="field__req" aria-hidden="true">*</span>
+            </label>
+            <input class="input" id="inquiryTitle" type="text" maxlength="200" autocomplete="off" />
+          </div>
+          <div class="field">
+            <label class="field__label" for="inquiryMessage">
+              내용 <span class="field__req" aria-hidden="true">*</span>
+            </label>
+            <textarea class="input" id="inquiryMessage" rows="3"></textarea>
+          </div>
+          <div class="form-status" id="inquiryStatus" role="status" aria-live="polite" hidden></div>
+          <div class="form-actions">
+            <button type="submit" class="btn btn--primary" id="inquirySubmit">문의 등록</button>
+          </div>
+        </form>
+      </section>
+
+      <section class="section">
+        <div class="section__head">
+          <h2 class="section__title">내 문의</h2>
+          <button type="button" class="btn btn--ghost btn--sm" id="inquiryRefreshBtn">새로고침</button>
+        </div>
+        <div class="state" id="inquiryListState" hidden></div>
+        <div class="mini-list" id="inquiryList"></div>
+      </section>
+    </div>
+  </main>
+
+  <!-- 문의 상세 -->
+  <dialog class="drawer" id="inquiryDrawer" aria-labelledby="inquiryDrawerTitle">
+    <div class="drawer__head">
+      <h2 class="drawer__title" id="inquiryDrawerTitle">문의 상세</h2>
+      <button type="button" class="drawer__close" data-close="inquiryDrawer" aria-label="닫기">✕</button>
+    </div>
+    <div class="drawer__body" id="inquiryDrawerBody"></div>
+  </dialog>
+
+  <!-- 공용 확인 대화상자 -->
+  <dialog class="drawer" id="confirmDialog" aria-labelledby="confirmTitle">
+    <div class="drawer__head">
+      <h2 class="drawer__title" id="confirmTitle">확인</h2>
+      <button type="button" class="drawer__close" data-close="confirmDialog" aria-label="닫기">✕</button>
+    </div>
+    <div class="drawer__body">
+      <p class="confirm-message" id="confirmMessage"></p>
+    </div>
+    <div class="drawer__foot">
+      <button type="button" class="btn btn--ghost" id="confirmCancel">취소</button>
+      <button type="button" class="btn btn--primary" id="confirmOk">확인</button>
+    </div>
+  </dialog>
+
+  <script src="../assets/api.js"></script>
+  <script>
+    "use strict";
+
+    // ---------- 상태 ----------
+    // 인증이 없으므로 URL 의 ID 는 보안 경계가 아니라 화면 선택값일 뿐이다.
+    const params = new URLSearchParams(window.location.search);
+    const state = {
+      academyId: Number(params.get("academy_id")) || null,
+      studentId: Number(params.get("student_id")) || null,
+      reservationFilter: "",
+      availablePasses: [],
+      loadedTabs: new Set(["home"]),
+    };
+
+    const numberFormat = new Intl.NumberFormat("ko-KR");
+
+    const STATUS_LABELS = {
+      RESERVED: "예정",
+      CHECKED_IN: "체크인 중",
+      COMPLETED: "이용 완료",
+      CANCELLED: "취소됨",
+    };
+    const STATUS_MODIFIERS = {
+      RESERVED: "badge--reserved",
+      CHECKED_IN: "badge--checked-in",
+      COMPLETED: "badge--completed",
+      CANCELLED: "badge--cancelled",
+    };
+    const INQUIRY_STATUS_LABELS = {
+      OPEN: "답변 대기",
+      ANSWERED: "답변 완료",
+      CLOSED: "종료",
+    };
+    const INQUIRY_STATUS_MODIFIERS = {
+      OPEN: "badge--open",
+      ANSWERED: "badge--answered",
+      CLOSED: "badge--closed",
+    };
+    const INQUIRY_CATEGORIES = [
+      { value: "PASS", label: "수강권" },
+      { value: "RESERVATION", label: "예약" },
+      { value: "ATTENDANCE", label: "수강·출결" },
+      { value: "CHECK_IN_OUT", label: "출석·퇴실" },
+      { value: "DEDUCTION_ERROR", label: "횟수 차감 오류" },
+      { value: "EXTENSION", label: "기간 연장" },
+      { value: "REFUND", label: "환불" },
+      { value: "FACILITY", label: "시설" },
+      { value: "OTHER", label: "기타" },
+    ];
+
+    // ---------- 포맷 도우미 ----------
+    function formatNumber(value) {
+      if (value === null || value === undefined) return "-";
+      return numberFormat.format(value);
+    }
+
+    function formatPrice(value) {
+      if (value === null || value === undefined) return "-";
+      return numberFormat.format(value) + "원";
+    }
+
+    function formatMinutes(value) {
+      if (!value) return "-";
+      return formatNumber(value) + "분";
+    }
+
+    function pad2(value) {
+      return String(value).padStart(2, "0");
+    }
+
+    function toISODate(dateObj) {
+      return (
+        dateObj.getFullYear() +
+        "-" +
+        pad2(dateObj.getMonth() + 1) +
+        "-" +
+        pad2(dateObj.getDate())
+      );
+    }
+
+    function today() {
+      return toISODate(new Date());
+    }
+
+    function formatDate(value) {
+      if (!value) return "-";
+      return String(value).slice(0, 10);
+    }
+
+    function formatTime(value) {
+      if (!value) return "-";
+      return String(value).slice(11, 16);
+    }
+
+    function formatDateTime(value) {
+      if (!value) return "-";
+      const text = String(value);
+      const label = text.slice(0, 10) + " " + text.slice(11, 16);
+      return text.slice(0, 10) === today() ? "오늘 " + text.slice(11, 16) : label;
+    }
+
+    function formatRange(startValue, endValue) {
+      if (!startValue) return "-";
+      return formatDateTime(startValue) + " ~ " + formatTime(endValue);
+    }
+
+    function localInputValue(dateObj) {
+      return (
+        toISODate(dateObj) +
+        "T" +
+        pad2(dateObj.getHours()) +
+        ":" +
+        pad2(dateObj.getMinutes())
+      );
+    }
+
+    function addMinutes(localValue, minutes) {
+      const parsed = new Date(localValue);
+      if (Number.isNaN(parsed.getTime())) return null;
+      parsed.setMinutes(parsed.getMinutes() + minutes);
+      return localInputValue(parsed);
+    }
+
+    // ---------- DOM 도우미 ----------
+    function byId(id) {
+      return document.getElementById(id);
+    }
+
+    function createEl(tag, className, text) {
+      const node = document.createElement(tag);
+      if (className) node.className = className;
+      if (text !== undefined && text !== null) node.textContent = String(text);
+      return node;
+    }
+
+    function clear(node) {
+      node.textContent = "";
+    }
+
+    function setState(id, kind, message) {
+      const node = byId(id);
+      if (!kind) {
+        node.hidden = true;
+        node.textContent = "";
+        return;
+      }
+      node.className = kind === "error" ? "state state--error" : "state";
+      node.textContent = message;
+      node.hidden = false;
+    }
+
+    function showError(id, err) {
+      setState(id, "error", CourseApi.messageFromError(err));
+    }
+
+    function statusBadge(status) {
+      return createEl(
+        "span",
+        "badge " + (STATUS_MODIFIERS[status] || ""),
+        STATUS_LABELS[status] || status
+      );
+    }
+
+    function inquiryStatusBadge(status) {
+      return createEl(
+        "span",
+        "badge " + (INQUIRY_STATUS_MODIFIERS[status] || ""),
+        INQUIRY_STATUS_LABELS[status] || status
+      );
+    }
+
+    function categoryLabel(value) {
+      const found = INQUIRY_CATEGORIES.find((item) => item.value === value);
+      return found ? found.label : value;
+    }
+
+    function actionButton(label, variant, handler) {
+      const button = createEl("button", "btn " + variant + " btn--sm", label);
+      button.type = "button";
+      button.addEventListener("click", () => handler(button));
+      return button;
+    }
+
+    // 처리 중 버튼을 잠가 중복 제출을 막는다.
+    async function withBusy(button, label, task) {
+      const original = button.textContent;
+      button.disabled = true;
+      button.textContent = label;
+      try {
+        return await task();
+      } finally {
+        button.disabled = false;
+        button.textContent = original;
+      }
+    }
+
+    // ---------- 확인 대화상자 ----------
+    const confirmDialog = byId("confirmDialog");
+    let confirmResolve = null;
+
+    function closeConfirm(result) {
+      if (confirmResolve) {
+        const resolve = confirmResolve;
+        confirmResolve = null;
+        resolve(result);
+      }
+      if (confirmDialog.open) confirmDialog.close();
+    }
+
+    function confirmAction(options) {
+      byId("confirmTitle").textContent = options.title || "확인";
+      byId("confirmMessage").textContent = options.message || "";
+      byId("confirmOk").textContent = options.confirmLabel || "확인";
+      byId("confirmCancel").hidden = Boolean(options.noticeOnly);
+      confirmDialog.showModal();
+      return new Promise((resolve) => {
+        confirmResolve = resolve;
+      });
+    }
+
+    function notify(title, message) {
+      return confirmAction({
+        title: title,
+        message: message,
+        confirmLabel: "확인",
+        noticeOnly: true,
+      });
+    }
+
+    byId("confirmOk").addEventListener("click", () => closeConfirm(true));
+    byId("confirmCancel").addEventListener("click", () => closeConfirm(false));
+    confirmDialog.addEventListener("close", () => closeConfirm(false));
+
+    document.querySelectorAll("[data-close]").forEach((button) => {
+      button.addEventListener("click", () => {
+        const dialog = byId(button.dataset.close);
+        if (dialog && dialog.open) dialog.close();
+      });
+    });
+
+    // ---------- 탭 ----------
+    function selectTab(name) {
+      document.querySelectorAll(".tab").forEach((tab) => {
+        tab.setAttribute(
+          "aria-selected",
+          tab.dataset.tab === name ? "true" : "false"
+        );
+      });
+      document.querySelectorAll(".tab-panel").forEach((panel) => {
+        panel.hidden = panel.id !== "panel-" + name;
+      });
+      if (!state.academyId || !state.studentId) return;
+      if (state.loadedTabs.has(name)) return;
+      state.loadedTabs.add(name);
+      if (name === "passes") loadPassProducts();
+      if (name === "reservations") loadReservationTab();
+      if (name === "attendance") loadAttendance();
+      if (name === "inquiries") loadInquiryTab();
+    }
+
+    byId("tabs").addEventListener("click", (event) => {
+      const tab = event.target.closest(".tab");
+      if (tab) selectTab(tab.dataset.tab);
+    });
+
+    document.querySelectorAll("[data-go]").forEach((button) => {
+      button.addEventListener("click", () => selectTab(button.dataset.go));
+    });
+
+    // ---------- 홈 ----------
+    async function loadMemberHome() {
+      if (!state.academyId || !state.studentId) return;
+      setState("homeState", "loading", "내 현황을 불러오는 중…");
+      clear(byId("homeKpis"));
+      clear(byId("homeNow"));
+      clear(byId("homeRecent"));
+      try {
+        const summary = await CourseApi.students.portalSummary(
+          state.academyId,
+          state.studentId
+        );
+        setState("homeState", null);
+        renderHome(summary);
+      } catch (err) {
+        showError("homeState", err);
+      }
+    }
+
+    function renderHome(summary) {
+      const tiles = [
+        {
+          label: "전체 잔여 횟수",
+          value: formatNumber(summary.passes.total_remaining_sessions) + "회",
+          accent: true,
+        },
+        {
+          label: "사용 가능한 수강권",
+          value: formatNumber(summary.passes.available_count) + "개",
+          hint: "전체 " + formatNumber(summary.passes.total_count) + "개",
+        },
+        {
+          label: "가장 가까운 만료일",
+          value: formatDate(summary.passes.nearest_expire_date),
+        },
+        {
+          label: "오늘 일정",
+          value: formatNumber(summary.attendance.today_count) + "건",
+        },
+        {
+          label: "답변 대기 문의",
+          value: formatNumber(summary.inquiries.open_count) + "건",
+          hint: "답변 완료 " + formatNumber(summary.inquiries.answered_count) + "건",
+        },
+      ];
+      const container = byId("homeKpis");
+      clear(container);
+      tiles.forEach((tile) => {
+        const box = createEl("div", "kpi" + (tile.accent ? " kpi--accent" : ""));
+        box.appendChild(createEl("span", "kpi__label", tile.label));
+        box.appendChild(createEl("span", "kpi__value", tile.value));
+        if (tile.hint) box.appendChild(createEl("span", "kpi__hint", tile.hint));
+        container.appendChild(box);
+      });
+
+      const now = byId("homeNow");
+      clear(now);
+      const checkedIn = summary.attendance.currently_checked_in;
+      const next = summary.attendance.next_reservation;
+      if (checkedIn) {
+        const card = createEl("div", "reservation-card reservation-card--active");
+        const head = createEl("div", "reservation-card__head");
+        head.appendChild(
+          createEl("span", "reservation-card__title", checkedIn.class_name)
+        );
+        head.appendChild(statusBadge(checkedIn.status));
+        card.appendChild(head);
+        card.appendChild(
+          createEl(
+            "div",
+            "reservation-card__time",
+            formatRange(checkedIn.scheduled_at, checkedIn.scheduled_end_at)
+          )
+        );
+        card.appendChild(
+          createEl(
+            "div",
+            "reservation-card__meta",
+            "수업 중입니다. 끝나면 퇴실해 주세요."
+          )
+        );
+        const actions = createEl("div", "row-actions");
+        actions.appendChild(
+          actionButton("퇴실하기", "btn--primary", (button) =>
+            checkOut(checkedIn, button)
+          )
+        );
+        card.appendChild(actions);
+        now.appendChild(card);
+      }
+      if (next) {
+        const card = createEl("div", "reservation-card");
+        const head = createEl("div", "reservation-card__head");
+        head.appendChild(
+          createEl("span", "reservation-card__title", next.class_name)
+        );
+        head.appendChild(statusBadge(next.status));
+        card.appendChild(head);
+        card.appendChild(
+          createEl(
+            "div",
+            "reservation-card__time",
+            formatRange(next.scheduled_at, next.scheduled_end_at)
+          )
+        );
+        const actions = createEl("div", "row-actions");
+        actions.appendChild(
+          actionButton("출석하기", "btn--primary", (button) =>
+            checkIn(next, button)
+          )
+        );
+        actions.appendChild(
+          actionButton("예약 취소", "btn--ghost", (button) =>
+            cancelReservation(next, button)
+          )
+        );
+        card.appendChild(actions);
+        now.appendChild(card);
+      }
+      if (!checkedIn && !next) {
+        now.appendChild(
+          createEl("p", "state", "예정된 수업이 없어요. 예약 탭에서 잡아 보세요.")
+        );
+      }
+
+      const recent = byId("homeRecent");
+      clear(recent);
+      if (!summary.attendance.recent_items.length) {
+        recent.appendChild(createEl("p", "state", "아직 이용 내역이 없어요."));
+        return;
+      }
+      summary.attendance.recent_items.forEach((item) => {
+        const node = createEl("div", "mini-list__item");
+        const title = createEl("div", "mini-list__title");
+        title.appendChild(document.createTextNode(item.class_name + " "));
+        title.appendChild(statusBadge(item.status));
+        node.appendChild(title);
+        node.appendChild(
+          createEl(
+            "div",
+            "mini-list__meta",
+            formatRange(item.scheduled_at, item.scheduled_end_at)
+          )
+        );
+        recent.appendChild(node);
+      });
+    }
+
+    byId("homeRefreshBtn").addEventListener("click", () => loadMemberHome());
+
+    // ---------- 수강권 ----------
+    async function loadPassProducts() {
+      await Promise.all([loadPassTypeProducts(), loadStudentPasses()]);
+    }
+
+    async function loadPassTypeProducts() {
+      const grid = byId("productGrid");
+      clear(grid);
+      setState("productState", "loading", "수강권 상품을 불러오는 중…");
+      try {
+        const page = await CourseApi.passTypes.list(state.academyId, {
+          limit: 100,
+          sort: "sort_index",
+          order: "asc",
+        });
+        const items = page.items || [];
+        if (!items.length) {
+          setState("productState", "empty", "판매 중인 수강권이 없어요.");
+          return;
+        }
+        setState("productState", null);
+        items.forEach((product) => grid.appendChild(buildProductCard(product)));
+      } catch (err) {
+        showError("productState", err);
+      }
+    }
+
+    function buildProductCard(product) {
+      const card = createEl("div", "product-card");
+      card.appendChild(createEl("div", "product-card__name", product.name));
+      if (product.description) {
+        card.appendChild(
+          createEl("div", "product-card__desc", product.description)
+        );
+      }
+      const meta = createEl("div", "product-card__meta");
+      meta.append(
+        createEl("span", null, "총 " + formatNumber(product.total_sessions) + "회"),
+        createEl(
+          "span",
+          null,
+          "유효기간 " + formatNumber(product.validity_days) + "일"
+        ),
+        createEl(
+          "span",
+          null,
+          "1회 수업 " + formatMinutes(product.session_duration_minutes)
+        )
+      );
+      card.appendChild(meta);
+      card.appendChild(
+        createEl("div", "product-card__price", formatPrice(product.price))
+      );
+      const actions = createEl("div", "product-card__buy");
+      actions.appendChild(
+        actionButton("구매하기", "btn--primary btn--sm", (button) =>
+          purchasePass(product, button)
+        )
+      );
+      card.appendChild(actions);
+      return card;
+    }
+
+    async function purchasePass(product, button) {
+      const confirmed = await confirmAction({
+        title: "수강권 구매",
+        message:
+          product.name +
+          "을(를) 구매하시겠습니까?\n\n" +
+          formatNumber(product.total_sessions) +
+          "회\n유효기간 " +
+          formatNumber(product.validity_days) +
+          "일\n1회 수업 시간 " +
+          formatMinutes(product.session_duration_minutes) +
+          "\n가격 " +
+          formatPrice(product.price) +
+          "\n\n현재 버전에서는 별도 결제 없이 즉시 등록됩니다.",
+        confirmLabel: "구매하기",
+      });
+      if (!confirmed) return;
+      const now = new Date();
+      const startedAt = localInputValue(now) + ":00";
+      try {
+        const issued = await withBusy(button, "등록 중…", () =>
+          CourseApi.studentPasses.create(state.academyId, state.studentId, {
+            pass_type_id: product.id,
+            purchased_at: startedAt,
+            started_at: startedAt,
+          })
+        );
+        await Promise.all([loadStudentPasses(), loadMemberHome()]);
+        state.loadedTabs.delete("reservations");
+        await notify(
+          "수강권이 등록됐어요",
+          issued.pass_type_name_snapshot +
+            " · 총 " +
+            formatNumber(issued.total_sessions) +
+            "회\n만료일 " +
+            formatDate(issued.expire_date)
+        );
+      } catch (err) {
+        await notify("등록하지 못했어요", CourseApi.messageFromError(err));
+      }
+    }
+
+    async function loadStudentPasses() {
+      const grid = byId("myPassGrid");
+      clear(grid);
+      setState("myPassState", "loading", "내 수강권을 불러오는 중…");
+      try {
+        const page = await CourseApi.studentPasses.list(
+          state.academyId,
+          state.studentId,
+          { limit: 50, sort: "expire_date", order: "desc" }
+        );
+        const items = page.items || [];
+        if (!items.length) {
+          setState(
+            "myPassState",
+            "empty",
+            "보유한 수강권이 없어요. 위에서 구매할 수 있어요."
+          );
+          return;
+        }
+        setState("myPassState", null);
+        items.forEach((item) => grid.appendChild(buildOwnedPassCard(item)));
+      } catch (err) {
+        showError("myPassState", err);
+      }
+    }
+
+    function buildOwnedPassCard(pass) {
+      const card = createEl(
+        "div",
+        "owned-card" + (pass.is_available ? "" : " owned-card--muted")
+      );
+      const head = createEl("div", "owned-card__head");
+      // 원본 상품이 삭제돼도 구매 당시 스냅샷 이름으로 표시한다.
+      head.appendChild(
+        createEl("span", "owned-card__name", pass.pass_type_name_snapshot)
+      );
+      head.appendChild(
+        createEl(
+          "span",
+          "badge " +
+            (pass.is_available
+              ? "badge--completed"
+              : pass.is_expired
+              ? "badge--cancelled"
+              : "badge--warn"),
+          pass.is_available ? "사용 가능" : pass.is_expired ? "만료" : "소진"
+        )
+      );
+      card.appendChild(head);
+
+      const bar = createEl("div", "owned-card__bar");
+      const fill = createEl("div", "owned-card__fill");
+      const ratio = pass.total_sessions
+        ? (pass.remaining_sessions / pass.total_sessions) * 100
+        : 0;
+      fill.style.width = ratio + "%";
+      bar.appendChild(fill);
+      card.appendChild(bar);
+
+      const list = createEl("dl", "owned-card__grid");
+      const rows = [
+        ["잔여", formatNumber(pass.remaining_sessions) + "회"],
+        [
+          "사용",
+          formatNumber(pass.used_sessions) +
+            " / " +
+            formatNumber(pass.total_sessions) +
+            "회",
+        ],
+        ["1회 수업", formatMinutes(pass.session_duration_minutes_snapshot)],
+        ["구매일", formatDate(pass.purchased_at)],
+        ["시작일", formatDate(pass.started_at)],
+        ["만료일", formatDate(pass.expire_date)],
+      ];
+      if (!pass.pass_type_exists) {
+        rows.push(["안내", "원본 상품이 삭제된 수강권이에요"]);
+      }
+      rows.forEach((row) => {
+        list.appendChild(createEl("dt", null, row[0]));
+        list.appendChild(createEl("dd", null, row[1]));
+      });
+      card.appendChild(list);
+
+      const actions = createEl("div", "row-actions");
+      actions.appendChild(
+        actionButton("삭제", "btn--danger", (button) => deletePass(pass, button))
+      );
+      card.appendChild(actions);
+      return card;
+    }
+
+    async function deletePass(pass, button) {
+      const confirmed = await confirmAction({
+        title: "수강권 삭제",
+        message:
+          pass.pass_type_name_snapshot +
+          "을(를) 삭제하시겠습니까?\n\n남은 횟수와 관계없이 수강권이 삭제됩니다.\n기존 수강 기록은 유지됩니다.",
+        confirmLabel: "삭제",
+      });
+      if (!confirmed) return;
+      try {
+        await withBusy(button, "삭제 중…", () =>
+          CourseApi.studentPasses.remove(
+            state.academyId,
+            state.studentId,
+            pass.id
+          )
+        );
+        await Promise.all([loadStudentPasses(), loadMemberHome()]);
+        state.loadedTabs.delete("reservations");
+      } catch (err) {
+        await notify("삭제하지 못했어요", CourseApi.messageFromError(err));
+      }
+    }
+
+    // ---------- 예약 ----------
+    async function loadReservationTab() {
+      await Promise.all([loadAvailablePasses(), loadReservations()]);
+    }
+
+    async function loadAvailablePasses() {
+      const select = byId("reservePass");
+      clear(select);
+      select.appendChild(new Option("수강권을 불러오는 중…", ""));
+      try {
+        const passes = await CourseApi.students.availablePasses(
+          state.academyId,
+          state.studentId
+        );
+        state.availablePasses = passes;
+        clear(select);
+        if (!passes.length) {
+          select.appendChild(new Option("사용 가능한 수강권이 없습니다", ""));
+          select.disabled = true;
+          byId("reservePassHint").textContent =
+            "수강권 탭에서 먼저 수강권을 구매해 주세요.";
+          return;
+        }
+        select.disabled = false;
+        select.appendChild(new Option("수강권을 선택하세요", ""));
+        passes.forEach((pass) => {
+          select.appendChild(
+            new Option(
+              pass.pass_type_name_snapshot +
+                " (잔여 " +
+                formatNumber(pass.remaining_sessions) +
+                "회)",
+              String(pass.id)
+            )
+          );
+        });
+      } catch (err) {
+        clear(select);
+        select.appendChild(new Option("불러오지 못했어요", ""));
+        showReserveStatus("error", CourseApi.messageFromError(err));
+      }
+    }
+
+    function selectedPass() {
+      const value = byId("reservePass").value;
+      return state.availablePasses.find((pass) => String(pass.id) === value);
+    }
+
+    // 선택한 수강권 정보와 예상 종료 시각을 미리 보여준다(최종 값은 서버 계산).
+    function refreshReserveHints() {
+      const pass = selectedPass();
+      const hint = byId("reservePassHint");
+      const endHint = byId("reserveEndHint");
+      if (!pass) {
+        hint.textContent =
+          "잔여 1회 이상이고 만료되지 않은 수강권만 선택할 수 있어요.";
+        endHint.textContent =
+          "종료 시각은 수강권의 1회 수업 시간으로 계산됩니다.";
+        return;
+      }
+      hint.textContent =
+        "잔여 " +
+        formatNumber(pass.remaining_sessions) +
+        "회 · 만료 " +
+        formatDate(pass.expire_date) +
+        " · 1회 수업 " +
+        formatMinutes(pass.session_duration_minutes_snapshot);
+      const startedAt = byId("reserveAt").value;
+      const end = startedAt
+        ? addMinutes(startedAt, pass.session_duration_minutes_snapshot)
+        : null;
+      endHint.textContent = end
+        ? "예상 종료 시각 " + formatDateTime(end + ":00")
+        : "시작 일시를 고르면 예상 종료 시각을 보여드려요.";
+    }
+
+    byId("reservePass").addEventListener("change", refreshReserveHints);
+    byId("reserveAt").addEventListener("change", refreshReserveHints);
+
+    function showReserveStatus(kind, message) {
+      const node = byId("reserveStatus");
+      node.className = "form-status form-status--" + kind;
+      node.textContent = message;
+      node.hidden = false;
+    }
+
+    byId("reserveForm").addEventListener("submit", (event) => {
+      event.preventDefault();
+      createReservation();
+    });
+
+    async function createReservation() {
+      const pass = selectedPass();
+      const className = byId("reserveClass").value.trim();
+      const scheduledAt = byId("reserveAt").value;
+      const memo = byId("reserveMemo").value.trim();
+      byId("reserveStatus").hidden = true;
+
+      if (!pass) return showReserveStatus("error", "사용할 수강권을 선택해 주세요.");
+      if (!className) return showReserveStatus("error", "수업명을 입력해 주세요.");
+      if (!scheduledAt) return showReserveStatus("error", "수업 시작 일시를 선택해 주세요.");
+
+      const submit = byId("reserveSubmit");
+      try {
+        const created = await withBusy(submit, "예약 중…", () =>
+          CourseApi.attendanceRecords.create(state.academyId, {
+            student_id: state.studentId,
+            student_pass_id: pass.id,
+            class_name: className,
+            scheduled_at:
+              scheduledAt.length === 16 ? scheduledAt + ":00" : scheduledAt,
+            memo: memo || null,
+          })
+        );
+        byId("reserveForm").reset();
+        byId("reserveAt").value = localInputValue(new Date());
+        refreshReserveHints();
+        await Promise.all([loadReservations(), loadMemberHome()]);
+        state.loadedTabs.delete("attendance");
+        await notify(
+          "예약이 등록됐어요",
+          created.class_name +
+            "\n" +
+            formatRange(created.scheduled_at, created.scheduled_end_at) +
+            "\n\n예약만으로는 횟수가 차감되지 않아요."
+        );
+      } catch (err) {
+        showReserveStatus("error", CourseApi.messageFromError(err));
+      }
+    }
+
+    byId("reservationFilter").addEventListener("click", (event) => {
+      const chip = event.target.closest(".chip");
+      if (!chip) return;
+      byId("reservationFilter")
+        .querySelectorAll(".chip")
+        .forEach((node) => node.setAttribute("aria-pressed", "false"));
+      chip.setAttribute("aria-pressed", "true");
+      state.reservationFilter = chip.dataset.status || "";
+      loadReservations();
+    });
+
+    async function loadReservations() {
+      const list = byId("reservationList");
+      clear(list);
+      setState("reservationState", "loading", "예약을 불러오는 중…");
+      try {
+        const page = await CourseApi.reservations.list(
+          state.academyId,
+          state.studentId,
+          {
+            status: state.reservationFilter,
+            limit: 50,
+            sort: "scheduled_at",
+            order: "desc",
+          }
+        );
+        const items = page.items || [];
+        if (!items.length) {
+          setState("reservationState", "empty", "해당하는 예약이 없어요.");
+          return;
+        }
+        setState("reservationState", null);
+        items.forEach((item) =>
+          list.appendChild(buildReservationCard(item, false))
+        );
+      } catch (err) {
+        showError("reservationState", err);
+      }
+    }
+
+    function buildReservationCard(item, compact) {
+      const card = createEl(
+        "div",
+        "reservation-card" +
+          (item.status === "CHECKED_IN" ? " reservation-card--active" : "")
+      );
+      const head = createEl("div", "reservation-card__head");
+      head.appendChild(
+        createEl("span", "reservation-card__title", item.class_name)
+      );
+      head.appendChild(statusBadge(item.status));
+      card.appendChild(head);
+      card.appendChild(
+        createEl(
+          "div",
+          "reservation-card__time",
+          formatRange(item.scheduled_at, item.scheduled_end_at)
+        )
+      );
+
+      const metaParts = [item.pass_type_name];
+      if (item.remaining_sessions !== null) {
+        metaParts.push("잔여 " + formatNumber(item.remaining_sessions) + "회");
+      }
+      if (item.checked_in_at) {
+        metaParts.push("출석 " + formatTime(item.checked_in_at));
+      }
+      if (item.checked_out_at) {
+        metaParts.push("퇴실 " + formatTime(item.checked_out_at));
+      }
+      card.appendChild(
+        createEl("div", "reservation-card__meta", metaParts.join(" · "))
+      );
+
+      const actions = createEl("div", "row-actions");
+      if (item.status === "RESERVED") {
+        actions.appendChild(
+          actionButton("출석하기", "btn--primary", (button) =>
+            checkIn(item, button)
+          )
+        );
+        actions.appendChild(
+          actionButton("예약 취소", "btn--ghost", (button) =>
+            cancelReservation(item, button)
+          )
+        );
+      } else if (item.status === "CHECKED_IN") {
+        actions.appendChild(
+          actionButton("퇴실하기", "btn--primary", (button) =>
+            checkOut(item, button)
+          )
+        );
+      }
+      if (actions.childNodes.length) card.appendChild(actions);
+      if (compact) card.classList.add("reservation-card--compact");
+      return card;
+    }
+
+    async function cancelReservation(item, button) {
+      const confirmed = await confirmAction({
+        title: "예약 취소",
+        message:
+          item.class_name +
+          " 예약을 취소하시겠습니까?\n" +
+          formatRange(item.scheduled_at, item.scheduled_end_at) +
+          "\n\n잔여 횟수는 변하지 않습니다.",
+        confirmLabel: "예약 취소",
+      });
+      if (!confirmed) return;
+      try {
+        await withBusy(button, "취소 중…", () =>
+          CourseApi.attendanceRecords.cancel(state.academyId, item.id, {})
+        );
+        await refreshAfterAttendanceChange();
+      } catch (err) {
+        await notify("취소하지 못했어요", CourseApi.messageFromError(err));
+      }
+    }
+
+    // ---------- 출석 · 퇴실 ----------
+    async function loadAttendance() {
+      const list = byId("attendanceList");
+      clear(list);
+      setState("attendanceState", "loading", "오늘 일정을 불러오는 중…");
+      try {
+        const page = await CourseApi.reservations.list(
+          state.academyId,
+          state.studentId,
+          {
+            upcoming_only: true,
+            limit: 50,
+            sort: "scheduled_at",
+            order: "asc",
+          }
+        );
+        const items = page.items || [];
+        if (!items.length) {
+          setState(
+            "attendanceState",
+            "empty",
+            "출석하거나 퇴실할 수업이 없어요."
+          );
+          return;
+        }
+        setState("attendanceState", null);
+        // 체크인 중인 수업을 맨 위로 올린다.
+        items
+          .slice()
+          .sort((left, right) => {
+            const leftScore = left.status === "CHECKED_IN" ? 0 : 1;
+            const rightScore = right.status === "CHECKED_IN" ? 0 : 1;
+            return leftScore - rightScore;
+          })
+          .forEach((item) => list.appendChild(buildReservationCard(item, true)));
+      } catch (err) {
+        showError("attendanceState", err);
+      }
+    }
+
+    async function checkIn(item, button) {
+      const confirmed = await confirmAction({
+        title: "출석 확인",
+        message:
+          item.class_name +
+          " 수업에 출석하시겠습니까?\n\n예약 시간: " +
+          formatDateTime(item.scheduled_at) +
+          "\n예상 종료: " +
+          formatTime(item.scheduled_end_at) +
+          "\n\n출석 시점에는 횟수가 차감되지 않습니다.",
+        confirmLabel: "출석하기",
+      });
+      if (!confirmed) return;
+      try {
+        const result = await withBusy(button, "처리 중…", () =>
+          CourseApi.attendanceRecords.checkIn(state.academyId, item.id)
+        );
+        await refreshAfterAttendanceChange();
+        await notify(
+          "출석 처리됐어요",
+          "체크인 시각 " +
+            formatTime(result.checked_in_at) +
+            "\n남은 횟수 " +
+            formatNumber(result.remaining_sessions) +
+            "회 (아직 차감 전)"
+        );
+      } catch (err) {
+        await notify("출석하지 못했어요", CourseApi.messageFromError(err));
+      }
+    }
+
+    async function checkOut(item, button) {
+      const confirmed = await confirmAction({
+        title: "퇴실 확인",
+        message:
+          "퇴실하면 수강이 완료되고 수강권 1회가 차감됩니다.\n계속하시겠습니까?",
+        confirmLabel: "퇴실하기",
+      });
+      if (!confirmed) return;
+      try {
+        const result = await withBusy(button, "처리 중…", () =>
+          CourseApi.attendanceRecords.checkOut(state.academyId, item.id)
+        );
+        await refreshAfterAttendanceChange();
+        await notify(
+          "수강이 완료됐어요",
+          "퇴실 시각 " +
+            formatTime(result.checked_out_at) +
+            "\n남은 횟수 " +
+            formatNumber(result.remaining_sessions) +
+            "회"
+        );
+      } catch (err) {
+        await notify("퇴실하지 못했어요", CourseApi.messageFromError(err));
+      }
+    }
+
+    // 상태가 바뀌면 영향을 받는 화면을 다시 조회한다.
+    async function refreshAfterAttendanceChange() {
+      await loadMemberHome();
+      if (state.loadedTabs.has("attendance")) await loadAttendance();
+      if (state.loadedTabs.has("reservations")) {
+        await Promise.all([loadReservations(), loadAvailablePasses()]);
+        refreshReserveHints();
+      }
+      if (state.loadedTabs.has("passes")) await loadStudentPasses();
+    }
+
+    byId("attendanceRefreshBtn").addEventListener("click", () =>
+      loadAttendance()
+    );
+
+    // ---------- 문의 ----------
+    async function loadInquiryTab() {
+      fillCategorySelect();
+      await Promise.all([loadInquiryOptions(), loadInquiries()]);
+    }
+
+    function fillCategorySelect() {
+      const select = byId("inquiryCategory");
+      if (select.options.length) return;
+      INQUIRY_CATEGORIES.forEach((item) => {
+        select.appendChild(new Option(item.label, item.value));
+      });
+      select.value = "OTHER";
+    }
+
+    async function loadInquiryOptions() {
+      const passSelect = byId("inquiryPass");
+      const recordSelect = byId("inquiryRecord");
+      clear(passSelect);
+      clear(recordSelect);
+      passSelect.appendChild(new Option("선택 안 함", ""));
+      recordSelect.appendChild(new Option("선택 안 함", ""));
+      try {
+        const [passes, reservations] = await Promise.all([
+          CourseApi.studentPasses.list(state.academyId, state.studentId, {
+            limit: 50,
+            sort: "expire_date",
+            order: "desc",
+          }),
+          CourseApi.reservations.list(state.academyId, state.studentId, {
+            limit: 20,
+            sort: "scheduled_at",
+            order: "desc",
+          }),
+        ]);
+        (passes.items || []).forEach((pass) => {
+          passSelect.appendChild(
+            new Option(
+              pass.pass_type_name_snapshot +
+                " (잔여 " +
+                formatNumber(pass.remaining_sessions) +
+                "회)",
+              String(pass.id)
+            )
+          );
+        });
+        (reservations.items || []).forEach((item) => {
+          recordSelect.appendChild(
+            new Option(
+              formatDateTime(item.scheduled_at) + " " + item.class_name,
+              String(item.id)
+            )
+          );
+        });
+      } catch (err) {
+        // 연결 항목은 선택 사항이므로 실패해도 문의 작성은 계속할 수 있다.
+        passSelect.appendChild(new Option("목록을 불러오지 못했어요", ""));
+      }
+    }
+
+    byId("inquiryForm").addEventListener("submit", (event) => {
+      event.preventDefault();
+      createInquiry();
+    });
+
+    function showInquiryStatus(kind, message) {
+      const node = byId("inquiryStatus");
+      node.className = "form-status form-status--" + kind;
+      node.textContent = message;
+      node.hidden = false;
+    }
+
+    async function createInquiry() {
+      const title = byId("inquiryTitle").value.trim();
+      const message = byId("inquiryMessage").value.trim();
+      byId("inquiryStatus").hidden = true;
+      if (!title) return showInquiryStatus("error", "제목을 입력해 주세요.");
+      if (!message) return showInquiryStatus("error", "내용을 입력해 주세요.");
+
+      const payload = {
+        category: byId("inquiryCategory").value,
+        title: title,
+        message: message,
+      };
+      const passId = byId("inquiryPass").value;
+      const recordId = byId("inquiryRecord").value;
+      if (passId) payload.related_student_pass_id = Number(passId);
+      if (recordId) payload.related_attendance_record_id = Number(recordId);
+
+      const submit = byId("inquirySubmit");
+      try {
+        await withBusy(submit, "등록 중…", () =>
+          CourseApi.inquiries.createForStudent(
+            state.academyId,
+            state.studentId,
+            payload
+          )
+        );
+        byId("inquiryForm").reset();
+        byId("inquiryCategory").value = "OTHER";
+        await Promise.all([loadInquiries(), loadMemberHome()]);
+        showInquiryStatus("success", "문의를 등록했어요. 답변이 오면 알려드릴게요.");
+      } catch (err) {
+        showInquiryStatus("error", CourseApi.messageFromError(err));
+      }
+    }
+
+    async function loadInquiries() {
+      const list = byId("inquiryList");
+      clear(list);
+      setState("inquiryListState", "loading", "문의 내역을 불러오는 중…");
+      try {
+        const page = await CourseApi.inquiries.listForStudent(
+          state.academyId,
+          state.studentId,
+          { limit: 50, sort: "created_at", order: "desc" }
+        );
+        const items = page.items || [];
+        if (!items.length) {
+          setState("inquiryListState", "empty", "등록한 문의가 없어요.");
+          return;
+        }
+        setState("inquiryListState", null);
+        items.forEach((item) => list.appendChild(buildInquiryRow(item)));
+      } catch (err) {
+        showError("inquiryListState", err);
+      }
+    }
+
+    function buildInquiryRow(inquiry) {
+      const item = createEl("div", "mini-list__item");
+      const title = createEl("div", "mini-list__title");
+      title.appendChild(document.createTextNode(inquiry.title + " "));
+      title.appendChild(inquiryStatusBadge(inquiry.status));
+      item.appendChild(title);
+      item.appendChild(
+        createEl(
+          "div",
+          "mini-list__meta",
+          categoryLabel(inquiry.category) +
+            " · 등록 " +
+            formatDateTime(inquiry.created_at) +
+            " · 메시지 " +
+            formatNumber(inquiry.message_count) +
+            "개" +
+            (inquiry.last_message_at
+              ? " · 최근 " + formatDateTime(inquiry.last_message_at)
+              : "")
+        )
+      );
+      const actions = createEl("div", "mini-list__actions");
+      actions.appendChild(
+        actionButton("자세히 보기", "btn--ghost", () => openInquiry(inquiry.id))
+      );
+      item.appendChild(actions);
+      return item;
+    }
+
+    byId("inquiryRefreshBtn").addEventListener("click", () => loadInquiries());
+
+    const inquiryDrawer = byId("inquiryDrawer");
+
+    async function openInquiry(inquiryId) {
+      const body = byId("inquiryDrawerBody");
+      clear(body);
+      body.appendChild(createEl("p", "state", "문의를 불러오는 중…"));
+      if (!inquiryDrawer.open) inquiryDrawer.showModal();
+      try {
+        const inquiry = await CourseApi.inquiries.getForStudent(
+          state.academyId,
+          state.studentId,
+          inquiryId
+        );
+        renderInquiryDetail(body, inquiry);
+      } catch (err) {
+        clear(body);
+        body.appendChild(
+          createEl("p", "state state--error", CourseApi.messageFromError(err))
+        );
+      }
+    }
+
+    function renderInquiryDetail(body, inquiry) {
+      clear(body);
+      byId("inquiryDrawerTitle").textContent = inquiry.title;
+
+      const head = createEl("div", "row-actions");
+      head.appendChild(inquiryStatusBadge(inquiry.status));
+      head.appendChild(
+        createEl("span", "badge", categoryLabel(inquiry.category))
+      );
+      body.appendChild(head);
+
+      const list = createEl("dl", "detail-grid");
+      const rows = [["등록일", formatDateTime(inquiry.created_at)]];
+      if (inquiry.closed_at) {
+        rows.push(["종료일", formatDateTime(inquiry.closed_at)]);
+      }
+      if (inquiry.related_student_pass) {
+        rows.push([
+          "관련 수강권",
+          inquiry.related_student_pass.pass_type_name +
+            " (잔여 " +
+            formatNumber(inquiry.related_student_pass.remaining_sessions) +
+            "회)",
+        ]);
+      }
+      if (inquiry.related_attendance_record) {
+        rows.push([
+          "관련 예약",
+          inquiry.related_attendance_record.class_name +
+            " · " +
+            formatDateTime(inquiry.related_attendance_record.scheduled_at),
+        ]);
+      }
+      rows.forEach((row) => {
+        list.appendChild(createEl("dt", null, row[0]));
+        list.appendChild(createEl("dd", null, row[1]));
+      });
+      body.appendChild(list);
+
+      const thread = createEl("div", "thread");
+      inquiry.messages.forEach((message) => {
+        const bubble = createEl(
+          "div",
+          "thread__item thread__item--" +
+            (message.sender_type === "STUDENT" ? "student" : "academy"),
+          message.message
+        );
+        bubble.appendChild(
+          createEl(
+            "span",
+            "thread__time",
+            (message.sender_type === "STUDENT" ? "나" : "아카데미") +
+              " · " +
+              formatDateTime(message.created_at)
+          )
+        );
+        thread.appendChild(bubble);
+      });
+      body.appendChild(thread);
+
+      const section = createEl("div", "subsection");
+      if (inquiry.status === "CLOSED") {
+        section.appendChild(
+          createEl(
+            "p",
+            "state",
+            "종료된 문의예요. 추가 메시지를 보낼 수 없습니다."
+          )
+        );
+        body.appendChild(section);
+        return;
+      }
+
+      const field = createEl("div", "field");
+      const label = createEl("label", "field__label", "추가 메시지");
+      label.setAttribute("for", "inquiryReply");
+      const textarea = document.createElement("textarea");
+      textarea.className = "input";
+      textarea.id = "inquiryReply";
+      textarea.rows = 2;
+      field.append(label, textarea);
+      section.appendChild(field);
+
+      const status = createEl("div", "form-status");
+      status.hidden = true;
+      section.appendChild(status);
+
+      const actions = createEl("div", "row-actions");
+      actions.appendChild(
+        actionButton("메시지 보내기", "btn--primary btn--sm", (button) =>
+          addInquiryMessage(inquiry.id, textarea, status, button)
+        )
+      );
+      actions.appendChild(
+        actionButton("문의 종료", "btn--ghost btn--sm", (button) =>
+          closeInquiry(inquiry.id, button)
+        )
+      );
+      section.appendChild(actions);
+      body.appendChild(section);
+    }
+
+    async function addInquiryMessage(inquiryId, textarea, status, button) {
+      const message = textarea.value.trim();
+      status.hidden = true;
+      if (!message) {
+        status.className = "form-status form-status--error";
+        status.textContent = "메시지를 입력해 주세요.";
+        status.hidden = false;
+        textarea.focus();
+        return;
+      }
+      try {
+        await withBusy(button, "보내는 중…", () =>
+          CourseApi.inquiries.addStudentMessage(
+            state.academyId,
+            state.studentId,
+            inquiryId,
+            { message: message }
+          )
+        );
+        await openInquiry(inquiryId);
+        await Promise.all([loadInquiries(), loadMemberHome()]);
+      } catch (err) {
+        status.className = "form-status form-status--error";
+        status.textContent = CourseApi.messageFromError(err);
+        status.hidden = false;
+      }
+    }
+
+    async function closeInquiry(inquiryId, button) {
+      const confirmed = await confirmAction({
+        title: "문의 종료",
+        message: "문의를 종료하시겠습니까?\n종료하면 메시지를 더 보낼 수 없어요.",
+        confirmLabel: "종료하기",
+      });
+      if (!confirmed) return;
+      try {
+        await withBusy(button, "종료 중…", () =>
+          CourseApi.inquiries.closeForStudent(
+            state.academyId,
+            state.studentId,
+            inquiryId
+          )
+        );
+        await openInquiry(inquiryId);
+        await Promise.all([loadInquiries(), loadMemberHome()]);
+      } catch (err) {
+        await notify("종료하지 못했어요", CourseApi.messageFromError(err));
+      }
+    }
+
+    // ---------- 초기화 ----------
+    function setPortalStatus(kind, message) {
+      const node = byId("portalStatus");
+      node.className =
+        kind === "error"
+          ? "dash-bar__status dash-bar__status--error"
+          : "dash-bar__status";
+      node.textContent = message;
+    }
+
+    // ---------- 회원 선택(직접 진입용) ----------
+    const pickAcademy = byId("pickAcademy");
+    const pickStudent = byId("pickStudent");
+    const pickSubmit = byId("pickSubmit");
+
+    function setPickStatus(kind, message) {
+      const node = byId("pickStatus");
+      if (!kind) {
+        node.hidden = true;
+        return;
+      }
+      node.className = "form-status form-status--" + kind;
+      node.textContent = message;
+      node.hidden = false;
+    }
+
+    function showPicker() {
+      byId("pickerSection").hidden = false;
+      byId("tabs").hidden = true;
+      document
+        .querySelectorAll(".tab-panel")
+        .forEach((panel) => (panel.hidden = true));
+      setPortalStatus("info", "아카데미와 회원을 선택해 주세요.");
+      loadPickerAcademies();
+    }
+
+    async function loadPickerAcademies() {
+      try {
+        const page = await CourseApi.academies.list({
+          limit: 100,
+          sort: "name",
+          order: "asc",
+        });
+        const items = page.items || [];
+        clear(pickAcademy);
+        pickAcademy.appendChild(
+          new Option(
+            items.length ? "아카데미를 선택하세요" : "등록된 아카데미가 없습니다",
+            ""
+          )
+        );
+        items.forEach((academy) => {
+          pickAcademy.appendChild(new Option(academy.name, String(academy.id)));
+        });
+        if (!items.length) {
+          setPickStatus(
+            "error",
+            "먼저 ‘정보 등록’에서 아카데미와 수강생을 만들어 주세요."
+          );
+        }
+      } catch (err) {
+        clear(pickAcademy);
+        pickAcademy.appendChild(new Option("목록을 불러오지 못했습니다", ""));
+        setPickStatus("error", CourseApi.messageFromError(err));
+      }
+    }
+
+    pickAcademy.addEventListener("change", async () => {
+      pickSubmit.disabled = true;
+      clear(pickStudent);
+      setPickStatus(null);
+      if (!pickAcademy.value) {
+        pickStudent.disabled = true;
+        pickStudent.appendChild(new Option("아카데미를 먼저 선택하세요", ""));
+        return;
+      }
+      pickStudent.disabled = true;
+      pickStudent.appendChild(new Option("회원을 불러오는 중…", ""));
+      try {
+        const page = await CourseApi.students.list(Number(pickAcademy.value), {
+          limit: 100,
+          sort: "name",
+          order: "asc",
+        });
+        const items = page.items || [];
+        clear(pickStudent);
+        pickStudent.appendChild(
+          new Option(
+            items.length ? "회원을 선택하세요" : "등록된 회원이 없습니다",
+            ""
+          )
+        );
+        items.forEach((student) => {
+          pickStudent.appendChild(new Option(student.name, String(student.id)));
+        });
+        pickStudent.disabled = !items.length;
+        if (!items.length) {
+          setPickStatus(
+            "error",
+            "이 아카데미에는 회원이 없어요. ‘정보 등록’에서 먼저 추가해 주세요."
+          );
+        }
+      } catch (err) {
+        clear(pickStudent);
+        pickStudent.appendChild(new Option("불러오지 못했어요", ""));
+        setPickStatus("error", CourseApi.messageFromError(err));
+      }
+    });
+
+    pickStudent.addEventListener("change", () => {
+      pickSubmit.disabled = !pickStudent.value;
+    });
+
+    pickSubmit.addEventListener("click", () => {
+      if (!pickAcademy.value || !pickStudent.value) return;
+      // 선택값을 URL 에 남겨 새로고침·공유해도 같은 화면이 열리게 한다.
+      window.location.href =
+        "member.html?academy_id=" +
+        encodeURIComponent(pickAcademy.value) +
+        "&student_id=" +
+        encodeURIComponent(pickStudent.value);
+    });
+
+    async function initPortal() {
+      byId("reserveAt").value = localInputValue(new Date());
+      if (!state.academyId || !state.studentId) {
+        showPicker();
+        return;
+      }
+      try {
+        const [academy, student] = await Promise.all([
+          CourseApi.academies.get(state.academyId),
+          CourseApi.students.get(state.academyId, state.studentId),
+        ]);
+        byId("portalAcademy").textContent = academy.name;
+        byId("portalStudent").textContent = student.name + " 님";
+        setPortalStatus(
+          "info",
+          student.is_active
+            ? "이용 중인 회원이에요. 회원 만료일 " + formatDate(student.expire_date)
+            : "현재 사용 가능한 수강권이 없어요. 수강권 탭에서 등록할 수 있어요."
+        );
+        document.title = student.name + " 님 · 회원 포털";
+        await loadMemberHome();
+      } catch (err) {
+        setPortalStatus("error", CourseApi.messageFromError(err));
+        setState("homeState", "error", CourseApi.messageFromError(err));
+      }
+    }
+
+    initPortal();
+  </script>
+</body>
+</html>

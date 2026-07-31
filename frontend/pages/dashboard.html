@@ -40,12 +40,45 @@
         aria-controls="panel-passtypes" aria-selected="false" data-tab="passtypes">수강권 종류</button>
       <button type="button" class="tab" role="tab" id="tab-worklists"
         aria-controls="panel-worklists" aria-selected="false" data-tab="worklists">관리 대상</button>
+      <button type="button" class="tab" role="tab" id="tab-inquiries"
+        aria-controls="panel-inquiries" aria-selected="false" data-tab="inquiries">문의</button>
       <button type="button" class="tab" role="tab" id="tab-analytics"
         aria-controls="panel-analytics" aria-selected="false" data-tab="analytics">통계</button>
     </nav>
 
     <!-- A. 개요 -->
     <div class="tab-panel" id="panel-overview" role="tabpanel" aria-labelledby="tab-overview">
+      <!-- 월간 수강 일정 달력 -->
+      <section class="section" aria-labelledby="calendarHeading">
+        <div class="section__head">
+          <h2 class="section__title" id="calendarHeading">수강 일정</h2>
+          <div class="calendar__nav">
+            <button type="button" class="btn btn--ghost btn--sm" id="calendarPrev">← 이전 달</button>
+            <button type="button" class="btn btn--ghost btn--sm" id="calendarToday">오늘</button>
+            <button type="button" class="btn btn--ghost btn--sm" id="calendarNext">다음 달 →</button>
+          </div>
+        </div>
+        <p class="calendar__month" id="calendarMonth" aria-live="polite"></p>
+        <div class="state" id="calendarState" hidden></div>
+
+        <div class="calendar__grid calendar__weekdays" aria-hidden="true">
+          <span class="calendar__weekday calendar__weekday--sun">일</span>
+          <span class="calendar__weekday">월</span>
+          <span class="calendar__weekday">화</span>
+          <span class="calendar__weekday">수</span>
+          <span class="calendar__weekday">목</span>
+          <span class="calendar__weekday">금</span>
+          <span class="calendar__weekday calendar__weekday--sat">토</span>
+        </div>
+        <div class="calendar__grid" id="calendarGrid"></div>
+
+        <div class="day-schedule">
+          <h3 class="day-schedule__title" id="dayScheduleTitle">날짜를 선택하세요</h3>
+          <div class="state" id="dayScheduleState" hidden></div>
+          <div class="mini-list" id="dayScheduleList"></div>
+        </div>
+      </section>
+
       <section class="section">
         <div class="section__head">
           <h2 class="section__title">운영 현황</h2>
@@ -349,6 +382,40 @@
       </section>
     </div>
 
+    <!-- 회원 문의 -->
+    <div class="tab-panel" id="panel-inquiries" role="tabpanel" aria-labelledby="tab-inquiries" hidden>
+      <section class="section">
+        <div class="section__head">
+          <h2 class="section__title">회원 문의</h2>
+          <button type="button" class="btn btn--ghost btn--sm" id="inquiryRefreshBtn">새로고침</button>
+        </div>
+        <div class="chip-row" id="inquiryFilter">
+          <button type="button" class="chip" data-status="" aria-pressed="true">전체</button>
+          <button type="button" class="chip" data-status="OPEN" aria-pressed="false">답변 대기</button>
+          <button type="button" class="chip" data-status="ANSWERED" aria-pressed="false">답변 완료</button>
+          <button type="button" class="chip" data-status="CLOSED" aria-pressed="false">종료</button>
+        </div>
+        <div class="state" id="inquiryState" hidden></div>
+        <div class="table-wrap">
+          <table class="table">
+            <caption class="sr-only">회원이 등록한 문의 목록</caption>
+            <thead>
+              <tr>
+                <th scope="col">등록일</th>
+                <th scope="col">회원</th>
+                <th scope="col">유형</th>
+                <th scope="col">제목</th>
+                <th scope="col">상태</th>
+                <th scope="col">메시지</th>
+                <th scope="col">답변</th>
+              </tr>
+            </thead>
+            <tbody id="inquiryRows"></tbody>
+          </table>
+        </div>
+      </section>
+    </div>
+
     <!-- H. 통계 -->
     <div class="tab-panel" id="panel-analytics" role="tabpanel" aria-labelledby="tab-analytics" hidden>
       <section class="section">
@@ -470,6 +537,15 @@
     <div class="drawer__body" id="studentDrawerBody"></div>
   </dialog>
 
+  <!-- 문의 상세(사업자 답변) -->
+  <dialog class="drawer" id="inquiryDrawer" aria-labelledby="inquiryDrawerTitle">
+    <div class="drawer__head">
+      <h2 class="drawer__title" id="inquiryDrawerTitle">문의 상세</h2>
+      <button type="button" class="drawer__close" data-close="inquiryDrawer" aria-label="닫기">✕</button>
+    </div>
+    <div class="drawer__body" id="inquiryDrawerBody"></div>
+  </dialog>
+
   <!-- 예약 생성 -->
   <dialog class="drawer" id="reserveDialog" aria-labelledby="reserveDialogTitle">
     <div class="drawer__head">
@@ -551,7 +627,15 @@
       pending: { offset: 0, limit: 10, total: 0 },
       expiringDays: 14,
       lowBalanceMax: 3,
+      inquiryStatus: "",
       detailStudentId: null,
+      // 월간 수강 일정 달력(개요 탭 상단)
+      calendar: {
+        year: new Date().getFullYear(),
+        month: new Date().getMonth(),
+        selected: null,
+        byDate: {},
+      },
       loadedTabs: new Set(),
     };
     // 오늘의 출결 표에 잔여 횟수를 채우기 위한 보유 수강권 캐시.
@@ -915,6 +999,7 @@
       if (name === "pending") loadPendingAttendance();
       if (name === "students") loadStudents();
       if (name === "passtypes") loadPassTypes();
+      if (name === "inquiries") loadInquiries();
       if (name === "worklists") loadWorklists();
       if (name === "analytics") loadAnalytics();
     }
@@ -1007,6 +1092,273 @@
         container.appendChild(box);
       });
     }
+
+    // ---------- 월간 수강 일정 달력 ----------
+    const WEEKDAY_LABELS = ["일", "월", "화", "수", "목", "금", "토"];
+    const CALENDAR_COUNTS = [
+      { status: "RESERVED", label: "예약", modifier: "calendar-count--reserved" },
+      { status: "COMPLETED", label: "완료", modifier: "calendar-count--completed" },
+      { status: "CANCELLED", label: "취소", modifier: "calendar-count--cancelled" },
+    ];
+
+    function parseISODate(iso) {
+      const parts = iso.split("-").map(Number);
+      return new Date(parts[0], parts[1] - 1, parts[2]);
+    }
+
+    // "2026년 7월 31일 (금)". 오늘이면 앞에 '오늘'을 붙인다.
+    function formatDayLabel(iso) {
+      const dateObj = parseISODate(iso);
+      const label =
+        dateObj.getFullYear() +
+        "년 " +
+        (dateObj.getMonth() + 1) +
+        "월 " +
+        dateObj.getDate() +
+        "일 (" +
+        WEEKDAY_LABELS[dateObj.getDay()] +
+        ")";
+      return iso === today() ? "오늘 · " + label : label;
+    }
+
+    // 달력에 그릴 칸 목록(앞뒤 달의 날짜 포함).
+    function monthCells(year, month) {
+      const first = new Date(year, month, 1);
+      const start = new Date(year, month, 1 - first.getDay());
+      const cells = [];
+      for (let index = 0; index < 42; index += 1) {
+        const dateObj = new Date(
+          start.getFullYear(),
+          start.getMonth(),
+          start.getDate() + index
+        );
+        cells.push({
+          iso: toISODate(dateObj),
+          day: dateObj.getDate(),
+          weekday: dateObj.getDay(),
+          inMonth: dateObj.getMonth() === month,
+        });
+      }
+      // 마지막 주가 통째로 다음 달이면 5주만 보여준다.
+      return cells.slice(35).every((cell) => !cell.inMonth)
+        ? cells.slice(0, 35)
+        : cells;
+    }
+
+    // limit 상한이 100이라 필요한 만큼 나눠 받는다.
+    async function fetchRecordsBetween(fromISO, toISO) {
+      const collected = [];
+      const limit = 100;
+      for (let page = 0; page < 10; page += 1) {
+        const result = await CourseApi.attendanceRecords.list(state.academyId, {
+          scheduled_from: fromISO + "T00:00:00",
+          scheduled_to: toISO + "T23:59:59",
+          limit: limit,
+          offset: page * limit,
+          sort: "scheduled_at",
+          order: "asc",
+        });
+        collected.push(...(result.items || []));
+        if (collected.length >= result.pagination.total) break;
+      }
+      return collected;
+    }
+
+    async function loadCalendar() {
+      if (!state.academyId) return;
+      const cells = monthCells(state.calendar.year, state.calendar.month);
+      renderCalendarMonthLabel();
+      setState("calendarState", "loading", "수강 일정을 불러오는 중…");
+      try {
+        const records = await fetchRecordsBetween(
+          cells[0].iso,
+          cells[cells.length - 1].iso
+        );
+        const byDate = {};
+        records.forEach((record) => {
+          const key = String(record.scheduled_at).slice(0, 10);
+          if (!byDate[key]) byDate[key] = [];
+          byDate[key].push(record);
+        });
+        state.calendar.byDate = byDate;
+        setState("calendarState", null);
+        renderCalendar(cells);
+        renderDaySchedule();
+      } catch (err) {
+        clear(byId("calendarGrid"));
+        showError("calendarState", err);
+      }
+    }
+
+    function renderCalendarMonthLabel() {
+      byId("calendarMonth").textContent =
+        state.calendar.year + "년 " + (state.calendar.month + 1) + "월";
+    }
+
+    function renderCalendar(cells) {
+      const grid = byId("calendarGrid");
+      clear(grid);
+      const todayISO = today();
+      cells.forEach((cell) => {
+        const records = state.calendar.byDate[cell.iso] || [];
+        const button = createEl("button", "calendar-day");
+        button.type = "button";
+        if (!cell.inMonth) button.classList.add("calendar-day--muted");
+        if (cell.weekday === 0) button.classList.add("calendar-day--sun");
+        if (cell.weekday === 6) button.classList.add("calendar-day--sat");
+        if (cell.iso === todayISO) button.classList.add("calendar-day--today");
+        if (cell.iso === state.calendar.selected) {
+          button.classList.add("calendar-day--selected");
+        }
+        button.setAttribute(
+          "aria-pressed",
+          cell.iso === state.calendar.selected ? "true" : "false"
+        );
+
+        const head = createEl("span", "calendar-day__head");
+        head.appendChild(createEl("span", "calendar-day__number", cell.day));
+        if (cell.iso === todayISO) {
+          head.appendChild(createEl("span", "calendar-day__today", "오늘"));
+        }
+        button.appendChild(head);
+
+        const counts = createEl("span", "calendar-day__counts");
+        const summary = [];
+        CALENDAR_COUNTS.forEach((entry) => {
+          const count = records.filter(
+            (record) => record.status === entry.status
+          ).length;
+          if (!count) return;
+          counts.appendChild(
+            createEl(
+              "span",
+              "calendar-count " + entry.modifier,
+              entry.label + " " + count
+            )
+          );
+          summary.push(entry.label + " " + count + "건");
+        });
+        button.appendChild(counts);
+        button.setAttribute(
+          "aria-label",
+          formatDayLabel(cell.iso) +
+            ", " +
+            (summary.length ? summary.join(", ") : "일정 없음")
+        );
+
+        button.addEventListener("click", () => selectCalendarDay(cell.iso));
+        grid.appendChild(button);
+      });
+    }
+
+    function selectCalendarDay(iso) {
+      state.calendar.selected = iso;
+      const selectedMonth = parseISODate(iso);
+      // 앞뒤 달의 날짜를 고르면 그 달로 이동한다.
+      if (
+        selectedMonth.getFullYear() !== state.calendar.year ||
+        selectedMonth.getMonth() !== state.calendar.month
+      ) {
+        state.calendar.year = selectedMonth.getFullYear();
+        state.calendar.month = selectedMonth.getMonth();
+        loadCalendar();
+        return;
+      }
+      renderCalendar(monthCells(state.calendar.year, state.calendar.month));
+      renderDaySchedule();
+    }
+
+    function renderDaySchedule() {
+      const iso = state.calendar.selected;
+      const list = byId("dayScheduleList");
+      clear(list);
+      if (!iso) {
+        byId("dayScheduleTitle").textContent = "날짜를 선택하세요";
+        setState("dayScheduleState", null);
+        return;
+      }
+      byId("dayScheduleTitle").textContent = formatDayLabel(iso) + " 일정";
+      const records = state.calendar.byDate[iso] || [];
+      if (!records.length) {
+        setState("dayScheduleState", "empty", "이 날에는 잡힌 수강이 없어요.");
+        return;
+      }
+      setState("dayScheduleState", null);
+      records.forEach((record) => list.appendChild(buildDayScheduleItem(record)));
+    }
+
+    function buildDayScheduleItem(record) {
+      const item = createEl("div", "mini-list__item");
+      const title = createEl("div", "mini-list__title");
+      title.appendChild(
+        document.createTextNode(
+          formatTime(record.scheduled_at) + " · " + record.class_name + " "
+        )
+      );
+      title.appendChild(statusBadge(record.status));
+      item.appendChild(title);
+      item.appendChild(
+        createEl(
+          "div",
+          "mini-list__meta",
+          record.student_name + " · " + record.pass_type_name
+        )
+      );
+
+      const actions = createEl("div", "mini-list__actions");
+      if (record.status === "RESERVED") {
+        actions.appendChild(
+          actionButton("완료", "btn--primary", async (button) => {
+            const pass = await fetchPass(
+              record.student_id,
+              record.student_pass_id
+            );
+            await completeAttendance(record, pass, button);
+          })
+        );
+        actions.appendChild(
+          actionButton("취소", "btn--ghost", (button) =>
+            cancelAttendance(record, button)
+          )
+        );
+      } else if (record.status === "COMPLETED") {
+        actions.appendChild(
+          actionButton("완료 취소", "btn--danger", (button) =>
+            restoreAttendance(record, button)
+          )
+        );
+      }
+      if (record.student_id !== null) {
+        actions.appendChild(
+          actionButton("상세", "btn--ghost", () =>
+            openStudentDetail(record.student_id)
+          )
+        );
+      }
+      item.appendChild(actions);
+      return item;
+    }
+
+    function moveCalendarMonth(step) {
+      const moved = new Date(
+        state.calendar.year,
+        state.calendar.month + step,
+        1
+      );
+      state.calendar.year = moved.getFullYear();
+      state.calendar.month = moved.getMonth();
+      loadCalendar();
+    }
+
+    byId("calendarPrev").addEventListener("click", () => moveCalendarMonth(-1));
+    byId("calendarNext").addEventListener("click", () => moveCalendarMonth(1));
+    byId("calendarToday").addEventListener("click", () => {
+      const now = new Date();
+      state.calendar.year = now.getFullYear();
+      state.calendar.month = now.getMonth();
+      state.calendar.selected = today();
+      loadCalendar();
+    });
 
     // ---------- 보유 수강권 캐시 ----------
     async function fetchPass(studentId, studentPassId) {
@@ -1108,6 +1460,7 @@
     async function refreshAfterAttendanceChange() {
       passCache.clear();
       await loadDashboard();
+      await loadCalendar();
       if (state.loadedTabs.has("today")) await loadTodayAttendance();
       if (state.loadedTabs.has("pending")) await loadPendingAttendance();
       if (state.loadedTabs.has("worklists")) await loadWorklists();
@@ -2021,6 +2374,7 @@
         reserveDialog.close();
         passCache.clear();
         await loadDashboard();
+        await loadCalendar();
         if (state.loadedTabs.has("today")) await loadTodayAttendance();
         if (state.loadedTabs.has("analytics")) await loadAnalytics();
         if (byId("studentDrawer").open && state.detailStudentId) {
@@ -2363,6 +2717,271 @@
 
     byId("addPassTypeBtn").addEventListener("click", openPassTypeForm);
     byId("passTypeRefreshBtn").addEventListener("click", () => loadPassTypes());
+
+    // ---------- 회원 문의(사업자 답변) ----------
+    const INQUIRY_STATUS_LABELS = {
+      OPEN: "답변 대기",
+      ANSWERED: "답변 완료",
+      CLOSED: "종료",
+    };
+    const INQUIRY_STATUS_MODIFIERS = {
+      OPEN: "badge--open",
+      ANSWERED: "badge--answered",
+      CLOSED: "badge--closed",
+    };
+    const INQUIRY_CATEGORY_LABELS = {
+      PASS: "수강권",
+      RESERVATION: "예약",
+      ATTENDANCE: "수강·출결",
+      CHECK_IN_OUT: "출석·퇴실",
+      DEDUCTION_ERROR: "횟수 차감 오류",
+      EXTENSION: "기간 연장",
+      REFUND: "환불",
+      FACILITY: "시설",
+      OTHER: "기타",
+    };
+
+    function inquiryStatusBadge(status) {
+      return createEl(
+        "span",
+        "badge " + (INQUIRY_STATUS_MODIFIERS[status] || ""),
+        INQUIRY_STATUS_LABELS[status] || status
+      );
+    }
+
+    byId("inquiryFilter").addEventListener("click", (event) => {
+      const chip = event.target.closest(".chip");
+      if (!chip) return;
+      byId("inquiryFilter")
+        .querySelectorAll(".chip")
+        .forEach((node) => node.setAttribute("aria-pressed", "false"));
+      chip.setAttribute("aria-pressed", "true");
+      state.inquiryStatus = chip.dataset.status || "";
+      loadInquiries();
+    });
+
+    byId("inquiryRefreshBtn").addEventListener("click", () => loadInquiries());
+
+    async function loadInquiries() {
+      if (!state.academyId) return;
+      const rows = byId("inquiryRows");
+      clear(rows);
+      setState("inquiryState", "loading", "문의를 불러오는 중…");
+      try {
+        const page = await CourseApi.inquiries.listForAcademy(
+          state.academyId,
+          {
+            status: state.inquiryStatus,
+            limit: 50,
+            sort: "created_at",
+            order: "desc",
+          }
+        );
+        const items = page.items || [];
+        if (!items.length) {
+          setState("inquiryState", "empty", "해당하는 문의가 없어요.");
+          return;
+        }
+        setState("inquiryState", null);
+        items.forEach((inquiry) => {
+          const row = document.createElement("tr");
+          cell(row, formatDateTime(inquiry.created_at));
+          cell(row, inquiry.student_name_snapshot, "td--wrap");
+          cell(
+            row,
+            INQUIRY_CATEGORY_LABELS[inquiry.category] || inquiry.category
+          );
+          cell(row, inquiry.title, "td--wrap");
+          const statusCell = createEl("td");
+          statusCell.appendChild(inquiryStatusBadge(inquiry.status));
+          row.appendChild(statusCell);
+          cell(row, formatNumber(inquiry.message_count), "td--num");
+          const actionCell = createEl("td");
+          actionCell.appendChild(
+            actionButton("열기", "btn--ghost", () =>
+              openInquiryDetail(inquiry.id)
+            )
+          );
+          row.appendChild(actionCell);
+          rows.appendChild(row);
+        });
+      } catch (err) {
+        showError("inquiryState", err);
+      }
+    }
+
+    async function openInquiryDetail(inquiryId) {
+      const drawer = byId("inquiryDrawer");
+      const body = byId("inquiryDrawerBody");
+      clear(body);
+      body.appendChild(createEl("p", "state", "문의를 불러오는 중…"));
+      if (!drawer.open) drawer.showModal();
+      try {
+        const inquiry = await CourseApi.inquiries.getForAcademy(
+          state.academyId,
+          inquiryId
+        );
+        renderInquiryDetail(body, inquiry);
+      } catch (err) {
+        clear(body);
+        body.appendChild(
+          createEl("p", "state state--error", CourseApi.messageFromError(err))
+        );
+      }
+    }
+
+    function renderInquiryDetail(body, inquiry) {
+      clear(body);
+      byId("inquiryDrawerTitle").textContent = inquiry.title;
+
+      const head = createEl("div", "row-actions");
+      head.appendChild(inquiryStatusBadge(inquiry.status));
+      head.appendChild(
+        createEl(
+          "span",
+          "badge",
+          INQUIRY_CATEGORY_LABELS[inquiry.category] || inquiry.category
+        )
+      );
+      body.appendChild(head);
+
+      const list = createEl("dl", "detail-grid");
+      const rows = [
+        ["회원", inquiry.student_name_snapshot],
+        ["등록일", formatDateTime(inquiry.created_at)],
+      ];
+      if (inquiry.related_student_pass) {
+        rows.push([
+          "관련 수강권",
+          inquiry.related_student_pass.pass_type_name +
+            " (잔여 " +
+            formatNumber(inquiry.related_student_pass.remaining_sessions) +
+            "회)",
+        ]);
+      }
+      if (inquiry.related_attendance_record) {
+        rows.push([
+          "관련 예약",
+          inquiry.related_attendance_record.class_name +
+            " · " +
+            formatDateTime(inquiry.related_attendance_record.scheduled_at),
+        ]);
+      }
+      if (inquiry.closed_at) {
+        rows.push(["종료일", formatDateTime(inquiry.closed_at)]);
+      }
+      rows.forEach((row) => {
+        list.appendChild(createEl("dt", null, row[0]));
+        list.appendChild(createEl("dd", null, row[1]));
+      });
+      body.appendChild(list);
+
+      const thread = createEl("div", "thread");
+      inquiry.messages.forEach((message) => {
+        const bubble = createEl(
+          "div",
+          "thread__item thread__item--" +
+            (message.sender_type === "ACADEMY" ? "student" : "academy"),
+          message.message
+        );
+        bubble.appendChild(
+          createEl(
+            "span",
+            "thread__time",
+            (message.sender_type === "ACADEMY" ? "우리" : "회원") +
+              " · " +
+              formatDateTime(message.created_at)
+          )
+        );
+        thread.appendChild(bubble);
+      });
+      body.appendChild(thread);
+
+      const section = createEl("div", "subsection");
+      if (inquiry.status === "CLOSED") {
+        section.appendChild(
+          createEl("p", "state", "종료된 문의라 답변을 추가할 수 없어요.")
+        );
+        body.appendChild(section);
+        return;
+      }
+
+      const field = createEl("div", "field");
+      const label = createEl("label", "field__label", "답변");
+      label.setAttribute("for", "inquiryAnswer");
+      const textarea = document.createElement("textarea");
+      textarea.className = "input";
+      textarea.id = "inquiryAnswer";
+      textarea.rows = 3;
+      field.append(label, textarea);
+      section.appendChild(field);
+
+      const status = createEl("div", "form-status");
+      status.hidden = true;
+      section.appendChild(status);
+
+      const actions = createEl("div", "row-actions");
+      actions.appendChild(
+        actionButton("답변 등록", "btn--primary btn--sm", (button) =>
+          submitInquiryAnswer(inquiry.id, textarea, status, button)
+        )
+      );
+      actions.appendChild(
+        actionButton("문의 종료", "btn--ghost btn--sm", (button) =>
+          closeInquiry(inquiry.id, button)
+        )
+      );
+      section.appendChild(actions);
+      body.appendChild(section);
+      textarea.focus();
+    }
+
+    async function submitInquiryAnswer(inquiryId, textarea, status, button) {
+      const message = textarea.value.trim();
+      status.hidden = true;
+      if (!message) {
+        status.className = "form-status form-status--error";
+        status.textContent = "답변 내용을 입력해 주세요.";
+        status.hidden = false;
+        textarea.focus();
+        return;
+      }
+      try {
+        await withBusy(button, "등록 중…", () =>
+          CourseApi.inquiries.addAcademyMessage(state.academyId, inquiryId, {
+            message: message,
+          })
+        );
+        await openInquiryDetail(inquiryId);
+        await loadInquiries();
+      } catch (err) {
+        status.className = "form-status form-status--error";
+        status.textContent = CourseApi.messageFromError(err);
+        status.hidden = false;
+      }
+    }
+
+    async function closeInquiry(inquiryId, button) {
+      const answer = await confirmAction({
+        title: "문의 종료",
+        message: "문의를 종료하시겠습니까?\n종료하면 양쪽 모두 메시지를 보낼 수 없어요.",
+        confirmLabel: "종료하기",
+      });
+      if (!answer.confirmed) return;
+      try {
+        await withBusy(button, "종료 중…", () =>
+          CourseApi.inquiries.closeForAcademy(state.academyId, inquiryId)
+        );
+        await openInquiryDetail(inquiryId);
+        await loadInquiries();
+      } catch (err) {
+        await confirmAction({
+          title: "종료하지 못했어요",
+          message: CourseApi.messageFromError(err),
+          confirmLabel: "확인",
+        });
+      }
+    }
 
     // ---------- G. 관리 대상 ----------
     function bindChipRow(containerId, datasetKey, onSelect) {
@@ -2872,6 +3491,12 @@
         (selected ? selected.textContent : "선택한 아카데미") +
           " 기준으로 표시하고 있어요."
       );
+      // 달력은 오늘이 있는 달부터 보여준다.
+      const now = new Date();
+      state.calendar.year = now.getFullYear();
+      state.calendar.month = now.getMonth();
+      state.calendar.selected = today();
+      loadCalendar();
       loadDashboard();
       const activeTab = document.querySelector('.tab[aria-selected="true"]');
       if (activeTab && activeTab.dataset.tab !== "overview") {
@@ -2892,6 +3517,10 @@
     // ---------- 초기화 ----------
     applyPreset("last30");
     renderPeriodChips();
+    // 아카데미를 고르기 전에도 이번 달 달력 틀은 보여준다.
+    renderCalendarMonthLabel();
+    renderCalendar(monthCells(state.calendar.year, state.calendar.month));
+    setState("calendarState", "empty", "아카데미를 선택하면 수강 일정을 보여드려요.");
     loadAcademies();
   </script>
 </body>

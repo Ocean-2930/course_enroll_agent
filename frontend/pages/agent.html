@@ -244,6 +244,8 @@
     }
 
     function enterChat() {
+      // 회원 포털 진입은 홈(index.html)의 '회원 포털' 카드에서만 제공한다.
+      // 이 페이지는 역할별 대화 화면만 담당한다.
       const role = ROLES[currentRole];
       const ctx = {
         academyName: selected.academy ? selected.academy.name : "",

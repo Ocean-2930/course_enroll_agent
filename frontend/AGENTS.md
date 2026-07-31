@@ -426,7 +426,9 @@ GET /api/health
 
 프런트엔드는 시작 시 또는 서버 상태 확인이 필요한 시점에 이 API를 호출할 수 있다. 응답의 HTTP 상태가 성공 범위이고 JSON의 `status`가 `ok`이면 연결된 상태로 판단한다.
 
-업무 API는 `/api` prefix 아래에 아카데미·수강권 종류·수강생·보유 수강권·수강 기록 CRUD와 조회 전용 집계(`/analytics`, `/worklists`, `/checks`)가 구현돼 있다. 전체 목록과 계약은 `../docs/PROJECT_STRUCTURE.md`와 `/docs`(OpenAPI)를 본다.
+업무 API는 `/api` prefix 아래에 아카데미·수강권 종류·수강생·보유 수강권·수강 기록 CRUD, 출석 체크인·퇴실, 1:1 문의, 조회 전용 집계(`/analytics`, `/worklists`, `/checks`)가 구현돼 있다. 전체 목록과 계약은 `../docs/PROJECT_STRUCTURE.md`와 `/docs`(OpenAPI)를 본다.
+
+화면은 `index.html`(홈), `pages/register.html`(정보 등록), `pages/dashboard.html`(사업자 콘솔), `pages/member.html`(회원 포털), `pages/agent.html`(역할 선택·대화)로 나뉜다. 홈의 진입 카드는 정보 등록 → 사업자 대시보드 → 회원 포털 → Agent 페이지 순이며, 회원 포털 진입은 홈 카드 하나로만 제공한다. 포털은 `?academy_id=..&student_id=..` 로 대상을 받는데, 이는 로그인이 아니라 화면 선택값이므로 실제 서비스 전에 인증·권한 검증이 필요하다.
 
 화면 코드는 `fetch()`를 직접 호출하지 않고 `assets/api.js`의 `window.CourseApi` 어댑터만 사용한다. 새 백엔드 엔드포인트를 화면에서 쓰게 되면 어댑터에 메서드를 먼저 추가한다.
 

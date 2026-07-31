@@ -180,6 +180,19 @@
           toQuery(params)
       );
     },
+    // 회원 포털 홈 요약(수강권·오늘 일정·다음 예약·문의 건수)
+    portalSummary: function (academyId, studentId) {
+      return apiRequest(studentPath(academyId, studentId, "/portal-summary"));
+    },
+  };
+
+  // 회원 예약 목록(수강권 잔여 횟수 포함).
+  var reservations = {
+    list: function (academyId, studentId, query) {
+      return apiRequest(
+        studentPath(academyId, studentId, "/reservations") + toQuery(query)
+      );
+    },
   };
 
   var studentPasses = {
@@ -288,6 +301,83 @@
         payload
       );
     },
+    // 출석 체크인 → 잔여 횟수는 차감하지 않음
+    checkIn: function (academyId, attendanceRecordId) {
+      return send(
+        academyPath(
+          academyId,
+          "/attendance-records/" + attendanceRecordId + "/check-in"
+        ),
+        "POST"
+      );
+    },
+    // 퇴실 → 수강 완료 + 잔여 1회 차감
+    checkOut: function (academyId, attendanceRecordId) {
+      return send(
+        academyPath(
+          academyId,
+          "/attendance-records/" + attendanceRecordId + "/check-out"
+        ),
+        "POST"
+      );
+    },
+  };
+
+  // 문의: 회원용(수강생 경로)과 사업자용(아카데미 경로)을 함께 제공한다.
+  var inquiries = {
+    listForStudent: function (academyId, studentId, query) {
+      return apiRequest(
+        studentPath(academyId, studentId, "/inquiries") + toQuery(query)
+      );
+    },
+    createForStudent: function (academyId, studentId, payload) {
+      return send(
+        studentPath(academyId, studentId, "/inquiries"),
+        "POST",
+        payload
+      );
+    },
+    getForStudent: function (academyId, studentId, inquiryId) {
+      return apiRequest(
+        studentPath(academyId, studentId, "/inquiries/" + inquiryId)
+      );
+    },
+    addStudentMessage: function (academyId, studentId, inquiryId, payload) {
+      return send(
+        studentPath(
+          academyId,
+          studentId,
+          "/inquiries/" + inquiryId + "/messages"
+        ),
+        "POST",
+        payload
+      );
+    },
+    closeForStudent: function (academyId, studentId, inquiryId) {
+      return send(
+        studentPath(academyId, studentId, "/inquiries/" + inquiryId + "/close"),
+        "POST"
+      );
+    },
+    listForAcademy: function (academyId, query) {
+      return apiRequest(academyPath(academyId, "/inquiries") + toQuery(query));
+    },
+    getForAcademy: function (academyId, inquiryId) {
+      return apiRequest(academyPath(academyId, "/inquiries/" + inquiryId));
+    },
+    addAcademyMessage: function (academyId, inquiryId, payload) {
+      return send(
+        academyPath(academyId, "/inquiries/" + inquiryId + "/messages"),
+        "POST",
+        payload
+      );
+    },
+    closeForAcademy: function (academyId, inquiryId) {
+      return send(
+        academyPath(academyId, "/inquiries/" + inquiryId + "/close"),
+        "POST"
+      );
+    },
   };
 
   // 기간 기반 집계(조회 전용). query 는 { date_from, date_to, group_by ... }
@@ -365,7 +455,9 @@
     passTypes: passTypes,
     students: students,
     studentPasses: studentPasses,
+    reservations: reservations,
     attendanceRecords: attendanceRecords,
+    inquiries: inquiries,
     analytics: analytics,
     worklists: worklists,
     checks: checks,
