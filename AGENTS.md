@@ -9,6 +9,8 @@
 ```text
 course_enroll_agent/
 ├─ AGENTS.md
+├─ docs/
+│  └─ PROJECT_STRUCTURE.md
 ├─ frontend/
 │  ├─ AGENTS.md
 │  ├─ index.html
@@ -48,6 +50,25 @@ course_enroll_agent/
 - 생성 파일, 가상환경, SQLite DB, 캐시는 Git에 포함하지 않는다.
 - 한 파일에 화면, 데이터 접근, API 처리 등 서로 다른 책임을 과도하게 모으지 않는다.
 - 기존 인터페이스를 변경할 때는 프런트엔드와 백엔드의 영향을 함께 확인한다.
+
+## 프로젝트 구조 문서
+
+`docs/PROJECT_STRUCTURE.md`는 기획·설계 단계에서 프로젝트 전체를 파악하기 위한
+요약 문서다. 파일 구성, 계층 경계, 데이터 모델, API 목록, 화면 흐름, 미구현
+공백을 한곳에 모아둔다.
+
+다음 변경이 발생하면 **같은 작업에서** 이 문서를 함께 갱신한다.
+
+- 파일이나 디렉터리를 추가·삭제·이동했을 때
+- API 엔드포인트, 요청·응답 계약, 오류 코드가 바뀌었을 때
+- `database/schema.py`의 테이블·컬럼·제약조건이 바뀌었을 때
+- 화면이 추가되거나 화면 간 이동 흐름이 바뀌었을 때
+- `frontend/assets/api.js`의 어댑터 메서드가 늘거나 줄었을 때
+- 미구현이던 기능을 구현했을 때(“현재 구현 상태 / 공백” 절 갱신)
+- 실행 방법이나 계층 경계 규칙이 바뀌었을 때
+
+문서와 코드가 어긋나면 코드가 기준이며, 어긋난 사실을 발견하면 그 자리에서
+문서를 고친다.
 
 ## 프런트엔드와 백엔드의 경계
 
@@ -109,4 +130,5 @@ frontend/runserver.bat
 - DB 스키마 변경은 `backend/database/schema.py`의 전체 생성문에 반영한다.
 - 외부 Python 라이브러리를 추가하거나 제거하면 `backend/requirements.txt`를 함께 갱신한다.
 - 프런트엔드가 사용하는 API 계약이 변경되면 `frontend/AGENTS.md` 또는 별도 API 계약 문서도 갱신한다.
+- 파일 구성, API, 스키마, 화면 흐름, 구현 상태가 바뀌면 `docs/PROJECT_STRUCTURE.md`를 함께 갱신한다.
 - 배치 파일은 `%~dp0`를 기준으로 경로를 계산하고 Windows `cmd.exe`에서 실행 가능한 ASCII 문구와 CRLF 줄바꿈을 사용한다.
