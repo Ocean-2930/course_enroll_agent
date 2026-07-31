@@ -536,6 +536,182 @@ select.input:disabled {
   color: var(--color-muted);
 }
 
+/* ===== 사업자: 수강권 정보 관리 (채팅 위쪽) ===== */
+.pass-panel {
+  flex-shrink: 0;
+  padding: 14px 16px 12px;
+  border-bottom: 1px solid var(--color-border);
+  background: #fbfaff;
+}
+
+.pass-panel[hidden] { display: none; }
+
+.pass-panel__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.pass-panel__title {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+/* 맨 오른쪽 + 버튼 */
+.pass-add-btn {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border: 1px solid var(--color-border);
+  border-radius: 9px;
+  background: var(--color-surface);
+  color: var(--color-brand);
+  font-size: 20px;
+  line-height: 1;
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+.pass-add-btn:hover {
+  background: var(--color-brand-soft);
+  border-color: var(--color-brand);
+}
+
+.pass-add-btn:focus-visible {
+  outline: 2px solid var(--color-brand);
+  outline-offset: 2px;
+}
+
+/* 좌우 스크롤 카드 행 */
+.pass-scroll {
+  display: flex;
+  gap: 12px;
+  overflow-x: auto;
+  padding-bottom: 6px;
+  scrollbar-width: thin;
+}
+
+.pass-scroll__empty {
+  color: var(--color-muted);
+  font-size: 13px;
+  padding: 8px 2px;
+}
+
+/* 수강권 카드 */
+.pass-card {
+  flex: 0 0 auto;
+  width: 190px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 14px;
+  border: 1px solid var(--color-border);
+  border-radius: 12px;
+  background: var(--color-surface);
+}
+
+.pass-card__name {
+  font-size: 14px;
+  font-weight: 700;
+  word-break: break-word;
+}
+
+.pass-card__meta {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  font-size: 12.5px;
+  color: var(--color-muted);
+}
+
+.pass-card__price {
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--color-brand);
+}
+
+.pass-card__desc {
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--color-muted);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* 생성용(입력) 카드 */
+.pass-card--form {
+  width: 230px;
+  gap: 8px;
+  border-style: dashed;
+  border-color: var(--color-brand);
+  background: var(--color-surface);
+}
+
+.pass-card--form .input {
+  padding: 8px 10px;
+  font-size: 13px;
+}
+
+.pass-card--form textarea.input {
+  resize: vertical;
+  min-height: 48px;
+}
+
+.pass-card__actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 2px;
+}
+
+.pass-card__actions .btn {
+  flex: 1;
+  padding: 8px 10px;
+  font-size: 13px;
+}
+
+.btn--ghost {
+  background: var(--color-bg);
+  color: var(--color-text);
+  border-color: var(--color-border);
+}
+
+.btn--ghost:hover { background: var(--color-brand-soft); }
+
+.btn--danger {
+  background: var(--color-error-bg);
+  color: var(--color-error-text);
+  border-color: var(--color-error-border);
+}
+
+.btn--danger:hover { opacity: 0.9; }
+
+/* 실제 카드의 수정/삭제 버튼 행(카드 하단 정렬) */
+.pass-card__tools {
+  display: flex;
+  gap: 6px;
+  margin-top: auto;
+  padding-top: 4px;
+}
+
+.pass-card__tools .btn {
+  flex: 1;
+  padding: 6px 8px;
+  font-size: 12.5px;
+}
+
+.pass-card__error {
+  font-size: 12px;
+  color: var(--color-error-text);
+}
+
+.pass-card__error[hidden] { display: none; }
+
 /* 채팅 메시지 영역 */
 .card__body {
   flex: 1;

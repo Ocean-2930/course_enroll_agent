@@ -74,6 +74,36 @@
     },
   };
 
+  var passTypes = {
+    // 특정 아카데미의 수강권 종류 목록 조회 → { items, pagination }
+    list: function (academyId, params) {
+      return apiRequest(
+        "/api/academies/" + academyId + "/pass-types" + toQuery(params)
+      );
+    },
+    // 수강권 종류 생성 → 생성된 수강권 종류 객체 반환
+    create: function (academyId, payload) {
+      return apiRequest("/api/academies/" + academyId + "/pass-types", {
+        method: "POST",
+        body: JSON.stringify(payload),
+      });
+    },
+    // 수강권 종류 수정 → 수정된 수강권 종류 객체 반환
+    update: function (academyId, passTypeId, payload) {
+      return apiRequest(
+        "/api/academies/" + academyId + "/pass-types/" + passTypeId,
+        { method: "PATCH", body: JSON.stringify(payload) }
+      );
+    },
+    // 수강권 종류 삭제 → 본문 없음(204)
+    remove: function (academyId, passTypeId) {
+      return apiRequest(
+        "/api/academies/" + academyId + "/pass-types/" + passTypeId,
+        { method: "DELETE" }
+      );
+    },
+  };
+
   var students = {
     // 특정 아카데미의 수강생 목록 조회 → { items, pagination }
     list: function (academyId, params) {
@@ -101,6 +131,7 @@
     baseUrl: API_BASE_URL,
     messageFromError: messageFromError,
     academies: academies,
+    passTypes: passTypes,
     students: students,
     health: health,
   };
