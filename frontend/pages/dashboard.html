@@ -1306,7 +1306,8 @@
       );
 
       const actions = createEl("div", "mini-list__actions");
-      if (record.status === "RESERVED") {
+      // 체크인만 하고 퇴실하지 않은 수강도 사업자가 완료 처리할 수 있다.
+      if (record.status === "RESERVED" || record.status === "CHECKED_IN") {
         actions.appendChild(
           actionButton("완료", "btn--primary", async (button) => {
             const pass = await fetchPass(
@@ -1316,12 +1317,16 @@
             await completeAttendance(record, pass, button);
           })
         );
+      }
+      if (record.status === "RESERVED") {
+        // 체크인 이후에는 취소할 수 없으므로 예약 상태에만 노출한다.
         actions.appendChild(
           actionButton("취소", "btn--ghost", (button) =>
             cancelAttendance(record, button)
           )
         );
-      } else if (record.status === "COMPLETED") {
+      }
+      if (record.status === "COMPLETED") {
         actions.appendChild(
           actionButton("완료 취소", "btn--danger", (button) =>
             restoreAttendance(record, button)
@@ -1425,18 +1430,23 @@
       row.appendChild(statusCell);
 
       const actions = createEl("div", "row-actions");
-      if (record.status === "RESERVED") {
+      // 체크인만 하고 퇴실하지 않은 수강도 사업자가 완료 처리할 수 있다.
+      if (record.status === "RESERVED" || record.status === "CHECKED_IN") {
         actions.appendChild(
           actionButton("완료", "btn--primary", (button) =>
             completeAttendance(record, pass, button)
           )
         );
+      }
+      if (record.status === "RESERVED") {
+        // 체크인 이후에는 취소할 수 없으므로 예약 상태에만 노출한다.
         actions.appendChild(
           actionButton("취소", "btn--ghost", (button) =>
             cancelAttendance(record, button)
           )
         );
-      } else if (record.status === "COMPLETED") {
+      }
+      if (record.status === "COMPLETED") {
         actions.appendChild(
           actionButton("완료 취소", "btn--danger", (button) =>
             restoreAttendance(record, button)

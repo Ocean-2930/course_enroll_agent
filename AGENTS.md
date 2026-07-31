@@ -10,7 +10,8 @@
 course_enroll_agent/
 ├─ AGENTS.md
 ├─ docs/
-│  └─ PROJECT_STRUCTURE.md
+│  ├─ PROJECT_STRUCTURE.md
+│  └─ UI_FLOWS.md
 ├─ frontend/
 │  ├─ AGENTS.md
 │  ├─ index.html
@@ -68,6 +69,10 @@ course_enroll_agent/
 - `frontend/assets/api.js`의 어댑터 메서드가 늘거나 줄었을 때
 - 미구현이던 기능을 구현했을 때(“현재 구현 상태 / 공백” 절 갱신)
 - 실행 방법이나 계층 경계 규칙이 바뀌었을 때
+
+`docs/UI_FLOWS.md`는 사업자 대시보드와 회원 포털이 각각 어떤 UI를 제공하고
+사용자가 어떤 순서로 쓰는지 설명하는 문서다. 두 화면의 탭 구성, 버튼과 확인
+문구, 상태 전이, 두 화면이 서로에게 미치는 영향이 바뀌면 함께 갱신한다.
 
 문서와 코드가 어긋나면 코드가 기준이며, 어긋난 사실을 발견하면 그 자리에서
 문서를 고친다.

@@ -2,6 +2,7 @@
 
 > 이 문서는 기획·설계 단계에서 프로젝트 전체를 파악하기 위한 요약본이다.
 > 파일 구조, 계층 경계, API 계약, 화면 흐름이 바뀌면 같은 변경에서 이 문서도 갱신한다.
+> 사업자·수강생이 실제로 어떤 UI를 쓰고 어떤 순서로 움직이는지는 [UI_FLOWS.md](UI_FLOWS.md)에 따로 정리했다.
 
 ## 1. 개요
 
@@ -21,7 +22,8 @@
 course_enroll_agent/
 ├─ AGENTS.md                      # 프로젝트 공통 개발 지침(아키텍처 규칙의 원본)
 ├─ docs/
-│  └─ PROJECT_STRUCTURE.md        # 이 문서
+│  ├─ PROJECT_STRUCTURE.md        # 이 문서
+│  └─ UI_FLOWS.md                 # 사업자·수강생 화면 안내와 이용 흐름
 ├─ backend/
 │  ├─ AGENTS.md                   # 백엔드 지침(API 추가 절차, DB 규칙)
 │  ├─ main.py                     # FastAPI 앱 생성 · CORS · 전역 예외 처리 · /ping
@@ -329,7 +331,7 @@ index.html (홈) — 진입 카드 4개(Agent 페이지가 마지막)
 
 ### 7.2 `pages/dashboard.html` — 사업자 운영 콘솔
 
-상단에서 아카데미를 고르면(선택값은 `localStorage`의 `courseEnroll.v1.dashboard.academyId`에 저장) 7개 탭이 활성화된다. 탭은 처음 열릴 때만 데이터를 불러오고, 상태 변경 후에는 영향받는 탭만 다시 조회한다.
+상단에서 아카데미를 고르면(선택값은 `localStorage`의 `courseEnroll.v1.dashboard.academyId`에 저장) 8개 탭이 활성화된다. 탭은 처음 열릴 때만 데이터를 불러오고, 상태 변경 후에는 영향받는 탭만 다시 조회한다.
 
 ```text
 아카데미 선택
