@@ -18,7 +18,9 @@
 - 드로어, 카드, 온보딩, 상태 피드백 등의 UI 패턴
 - 데스크톱과 모바일의 반응형 표현
 
-프런트엔드는 `../backend/main.py`의 FastAPI 서버가 실행 중인 환경을 기본으로 한다. 현재 확정된 API는 `GET /ping` 하나이며, 기존 n8n, Supabase, Gemini, Groq 연동 방식은 새 프런트엔드의 요구사항으로 간주하지 않는다. 이후 API와 데이터 모델이 확장될 수 있으므로 프런트엔드는 교체 가능한 API 경계를 갖도록 만든다.
+프런트엔드는 `../backend/main.py`의 FastAPI 서버가 실행 중인 환경을 기본으로 한다. 기존 n8n, Supabase, Gemini, Groq 연동 방식은 새 프런트엔드의 요구사항으로 간주하지 않는다. 이후 API와 데이터 모델이 확장될 수 있으므로 프런트엔드는 교체 가능한 API 경계를 갖도록 만든다.
+
+현재 사용 가능한 API 목록과 화면 구성은 `../docs/PROJECT_STRUCTURE.md`를 기준으로 확인한다. 이 문서의 개별 예시가 그 내용과 어긋나면 `PROJECT_STRUCTURE.md`와 실제 코드가 우선한다.
 
 ## 기본 원칙
 
@@ -407,10 +409,11 @@ interface UserStateService {
 ../backend/runserver.bat
 ```
 
-현재 확정된 통신 계약:
+서버 상태 확인 계약:
 
 ```http
 GET /ping
+GET /api/health
 ```
 
 성공 응답:
@@ -423,6 +426,10 @@ GET /ping
 
 프런트엔드는 시작 시 또는 서버 상태 확인이 필요한 시점에 이 API를 호출할 수 있다. 응답의 HTTP 상태가 성공 범위이고 JSON의 `status`가 `ok`이면 연결된 상태로 판단한다.
 
+업무 API는 `/api` prefix 아래에 아카데미·수강권 종류·수강생·보유 수강권·수강 기록 CRUD와 조회 전용 집계(`/analytics`, `/worklists`, `/checks`)가 구현돼 있다. 전체 목록과 계약은 `../docs/PROJECT_STRUCTURE.md`와 `/docs`(OpenAPI)를 본다.
+
+화면 코드는 `fetch()`를 직접 호출하지 않고 `assets/api.js`의 `window.CourseApi` 어댑터만 사용한다. 새 백엔드 엔드포인트를 화면에서 쓰게 되면 어댑터에 메서드를 먼저 추가한다.
+
 API 기본 주소는 화면 코드에 반복해서 쓰지 않는다. 환경 설정 또는 API 클라이언트 한 곳에서 관리한다.
 
 ```ts
@@ -434,7 +441,6 @@ const API_BASE_URL =
 
 현재 단계에서는 다음을 구현하거나 가정하지 않는다.
 
-- `/ping` 이외의 FastAPI 엔드포인트
 - n8n 워크플로우 구조
 - Supabase 테이블 구조
 - 익명 `device_id` 인증
@@ -461,7 +467,8 @@ const API_BASE_URL =
 - 모든 주요 상태에 빈 화면, 로딩, 성공, 오류 표현이 있다.
 - 데스크톱과 모바일에서 핵심 기능을 동일하게 사용할 수 있다.
 - 실제 `GET /ping`으로 FastAPI 서버 연결 상태를 확인할 수 있다.
-- `/ping` 이외의 API가 없어도 목 데이터로 나머지 주요 화면을 확인할 수 있다.
+- 화면이 사용하는 데이터는 모두 `window.CourseApi`를 거친다.
+- 아직 API가 없는 기능만 목 데이터로 표현하고, 실제 저장되는 것처럼 보이게 하지 않는다.
 - 백엔드 URL이나 비밀정보가 UI 코드에 하드코딩되어 있지 않다.
 - 사용자 입력과 외부 결과가 안전하게 렌더링된다.
 - 키보드 탐색과 포커스 이동이 정상 동작한다.

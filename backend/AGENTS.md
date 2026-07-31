@@ -16,6 +16,8 @@
 | `database/connection.py` | SQLite 연결 생성과 연결별 PRAGMA 설정 |
 | `database/schema.py` | 초기화 시 적용할 전체 SQLite 스키마 |
 | `init_db.py` | 기존 SQLite 파일 삭제 및 전체 DB 스키마 재생성 |
+| `init_data.py` | `init_db` 실행 후 테스트용 샘플 데이터 채우기 |
+| `test/` | pytest 테스트와 공용 픽스처(`conftest.py`) |
 | `requirements.txt` | 백엔드에서 사용하는 외부 Python 라이브러리 |
 | `init_venv.bat` | `.venv` 생성과 의존성 설치 |
 | `runserver.bat` | 가상환경 활성화와 8000 포트 서버 실행 |

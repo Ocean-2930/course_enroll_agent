@@ -291,3 +291,217 @@ class AttendanceRecordResponse(ApiModel):
 class HealthResponse(ApiModel):
     status: Literal["ok"]
     database: Literal["connected"]
+
+
+# =========================================================
+# 운영 분석 · 관리 목록 · 정합성 점검 응답 모델
+# 향후 Agent Tool Calling이 그대로 사용할 수 있도록 고정 코드와
+# 구조화된 숫자만 담는다. 표시용 문장은 프런트엔드에서 만든다.
+# =========================================================
+
+GroupBy = Literal["day", "week", "month"]
+ReregistrationReason = Literal[
+    "LOW_REMAINING_SESSIONS",
+    "EXPIRING_SOON",
+    "ALL_PASSES_EXHAUSTED",
+    "EXPIRED_WITH_RECENT_ATTENDANCE",
+]
+
+
+class PeriodRange(ApiModel):
+    date_from: date
+    date_to: date
+
+
+class DashboardStudentCounts(ApiModel):
+    total: int
+    active: int
+    inactive: int
+    new_in_period: int
+
+
+class DashboardPassCounts(ApiModel):
+    issued_in_period: int
+    available: int
+    total_remaining_sessions: int
+    expiring_within_14_days: int
+    low_balance_count: int
+
+
+class DashboardAttendanceCounts(ApiModel):
+    reserved_in_period: int
+    completed_in_period: int
+    cancelled_in_period: int
+    pending_past: int
+
+
+class DashboardAnalyticsResponse(ApiModel):
+    period: PeriodRange
+    students: DashboardStudentCounts
+    student_passes: DashboardPassCounts
+    attendance: DashboardAttendanceCounts
+
+
+class ChangeSummary(ApiModel):
+    count: int
+    rate: float | None
+
+
+class RegistrationPreviousPeriod(ApiModel):
+    date_from: date
+    date_to: date
+    total_students: int
+    total_student_passes: int
+
+
+class RegistrationSeriesPoint(ApiModel):
+    period: date
+    students: int
+    student_passes: int
+
+
+class RegistrationAnalyticsResponse(ApiModel):
+    period: PeriodRange
+    group_by: GroupBy
+    total_students: int
+    total_student_passes: int
+    previous_period: RegistrationPreviousPeriod
+    student_change: ChangeSummary
+    student_pass_change: ChangeSummary
+    series: list[RegistrationSeriesPoint]
+
+
+class AttendanceTotals(ApiModel):
+    reserved: int
+    completed: int
+    cancelled: int
+    pending_past: int
+
+
+class AttendanceSeriesPoint(ApiModel):
+    period: date
+    reserved: int
+    completed: int
+    cancelled: int
+
+
+class AttendanceClassCount(ApiModel):
+    class_name: str
+    completed: int
+
+
+class AttendancePassTypeCount(ApiModel):
+    pass_type_id_snapshot: int
+    pass_type_name_snapshot: str
+    completed: int
+
+
+class AttendanceAnalyticsResponse(ApiModel):
+    period: PeriodRange
+    group_by: GroupBy
+    totals: AttendanceTotals
+    series: list[AttendanceSeriesPoint]
+    by_class_name: list[AttendanceClassCount]
+    by_pass_type: list[AttendancePassTypeCount]
+
+
+class PassTypeAnalyticsItem(ApiModel):
+    pass_type_id_snapshot: int
+    pass_type_name_snapshot: str
+    issued_count: int
+    issued_sessions: int
+    remaining_sessions: int
+    used_sessions: int
+    completed_attendance_count: int
+    issued_price_total: int
+
+
+class PassTypeAnalyticsResponse(ApiModel):
+    period: PeriodRange
+    items: list[PassTypeAnalyticsItem]
+    pagination: Pagination
+
+
+class PendingAttendanceItem(ApiModel):
+    attendance_record_id: int
+    student_id: int | None
+    student_name: str
+    student_pass_id: int | None
+    pass_type_id_snapshot: int
+    pass_type_name: str
+    class_name: str
+    scheduled_at: datetime
+    status: AttendanceStatus
+    remaining_sessions: int | None
+    expire_date: date | None
+
+
+class ExpiringPassItem(ApiModel):
+    student_pass_id: int
+    student_id: int
+    student_name: str
+    student_phone: str | None
+    pass_type_id_snapshot: int
+    pass_type_name: str
+    total_sessions: int
+    remaining_sessions: int
+    expire_date: date
+    days_left: int
+    last_completed_at: datetime | None
+
+
+class LowBalancePassItem(ApiModel):
+    student_pass_id: int
+    student_id: int
+    student_name: str
+    student_phone: str | None
+    pass_type_id_snapshot: int
+    pass_type_name: str
+    total_sessions: int
+    remaining_sessions: int
+    expire_date: date
+    last_completed_at: datetime | None
+
+
+class ReregistrationCriteria(ApiModel):
+    max_remaining: int
+    expiring_within_days: int
+    recent_attendance_days: int
+
+
+class ReregistrationCandidateItem(ApiModel):
+    student_id: int
+    student_name: str
+    student_phone: str | None
+    student_expire_date: date | None
+    pass_count: int
+    remaining_sessions: int
+    total_remaining_sessions: int
+    available_pass_count: int
+    nearest_expire_date: date | None
+    last_completed_at: datetime | None
+    reasons: list[ReregistrationReason]
+
+
+class ReregistrationCandidatesResponse(ApiModel):
+    criteria: ReregistrationCriteria
+    items: list[ReregistrationCandidateItem]
+    pagination: Pagination
+
+
+class LedgerMismatchItem(ApiModel):
+    student_pass_id: int
+    student_id: int
+    student_name: str
+    pass_type_name: str
+    total_sessions: int
+    stored_remaining_sessions: int
+    expected_remaining_sessions: int
+    difference: int
+
+
+class LedgerConsistencyResponse(ApiModel):
+    academy_id: int
+    checked_count: int
+    mismatch_count: int
+    items: list[LedgerMismatchItem]

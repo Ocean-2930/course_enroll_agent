@@ -21,6 +21,7 @@ router = APIRouter(prefix="/academies", tags=["academies"])
 @router.get(
     "",
     response_model=Page[AcademyResponse],
+    operation_id="list_academies",
     summary="아카데미 목록 조회",
 )
 def list_academies(
@@ -43,6 +44,7 @@ def list_academies(
     "",
     response_model=AcademyResponse,
     status_code=status.HTTP_201_CREATED,
+    operation_id="create_academy",
     summary="아카데미 생성",
 )
 def create_academy(payload: AcademyCreate) -> dict:
@@ -52,6 +54,7 @@ def create_academy(payload: AcademyCreate) -> dict:
 @router.get(
     "/{academy_id}",
     response_model=AcademyResponse,
+    operation_id="get_academy",
     summary="아카데미 상세 조회",
 )
 def get_academy(academy_id: int) -> dict:
@@ -61,6 +64,7 @@ def get_academy(academy_id: int) -> dict:
 @router.patch(
     "/{academy_id}",
     response_model=AcademyResponse,
+    operation_id="update_academy",
     summary="아카데미 수정",
 )
 def update_academy(
@@ -76,6 +80,7 @@ def update_academy(
 @router.delete(
     "/{academy_id}",
     status_code=status.HTTP_204_NO_CONTENT,
+    operation_id="delete_academy",
     summary="아카데미 삭제",
 )
 def delete_academy(academy_id: int) -> Response:
@@ -86,6 +91,7 @@ def delete_academy(academy_id: int) -> Response:
 @router.get(
     "/{academy_id}/summary",
     response_model=AcademySummaryResponse,
+    operation_id="get_academy_summary",
     summary="아카데미 요약 조회",
 )
 def get_academy_summary(academy_id: int) -> dict:

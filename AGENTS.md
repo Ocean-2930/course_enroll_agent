@@ -19,6 +19,8 @@ course_enroll_agent/
    ├─ AGENTS.md
    ├─ main.py
    ├─ init_db.py
+   ├─ init_data.py
+   ├─ test/
    ├─ api/
    │  ├─ router.py
    │  └─ 리소스별 API 모듈
@@ -109,6 +111,12 @@ SQLite 초기화(기존 DB와 데이터 삭제 후 재생성):
 
 ```text
 backend/.venv/Scripts/python.exe backend/init_db.py
+```
+
+초기화 + 테스트용 샘플 데이터 채우기(기존 데이터 삭제):
+
+```text
+backend/.venv/Scripts/python.exe backend/init_data.py
 ```
 
 백엔드 실행:

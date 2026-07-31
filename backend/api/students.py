@@ -32,6 +32,7 @@ router = APIRouter(
 @router.get(
     "",
     response_model=Page[StudentResponse],
+    operation_id="list_students",
     summary="수강생 목록 조회",
 )
 def list_students(
@@ -72,6 +73,7 @@ def list_students(
     "",
     response_model=StudentResponse,
     status_code=status.HTTP_201_CREATED,
+    operation_id="create_student",
     summary="수강생 생성",
 )
 def create_student(
@@ -87,6 +89,7 @@ def create_student(
 @router.get(
     "/{student_id}",
     response_model=StudentResponse,
+    operation_id="get_student",
     summary="수강생 상세 조회",
 )
 def get_student(academy_id: int, student_id: int) -> dict:
@@ -96,6 +99,7 @@ def get_student(academy_id: int, student_id: int) -> dict:
 @router.patch(
     "/{student_id}",
     response_model=StudentResponse,
+    operation_id="update_student",
     summary="수강생 수정",
 )
 def update_student(
@@ -113,6 +117,7 @@ def update_student(
 @router.delete(
     "/{student_id}",
     status_code=status.HTTP_204_NO_CONTENT,
+    operation_id="delete_student",
     summary="수강생 삭제",
 )
 def delete_student(academy_id: int, student_id: int) -> Response:
@@ -123,6 +128,7 @@ def delete_student(academy_id: int, student_id: int) -> Response:
 @router.get(
     "/{student_id}/summary",
     response_model=StudentSummaryResponse,
+    operation_id="get_student_summary",
     summary="수강생 요약 조회",
 )
 def get_student_summary(academy_id: int, student_id: int) -> dict:
@@ -132,6 +138,7 @@ def get_student_summary(academy_id: int, student_id: int) -> dict:
 @router.get(
     "/{student_id}/available-passes",
     response_model=list[StudentPassResponse],
+    operation_id="list_student_available_passes",
     summary="사용 가능한 수강권 조회",
 )
 def list_available_passes(
@@ -147,6 +154,7 @@ def list_available_passes(
 @router.get(
     "/{student_id}/attendance-records",
     response_model=Page[AttendanceRecordResponse],
+    operation_id="list_student_attendance_records",
     summary="수강생 전체 수강 기록 조회",
 )
 def list_student_attendance_records(

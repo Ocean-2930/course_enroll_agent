@@ -1757,3 +1757,993 @@ def restore_attendance(
         )
     finally:
         connection.close()
+
+
+# =========================================================
+# 운영 분석 · 관리 목록 · 정합성 점검 (조회 전용)
+# 화면과 향후 Agent Tool이 함께 사용하는 집계 함수 모음이다.
+# 이 구역의 함수는 어떤 데이터도 변경하지 않는다.
+# =========================================================
+
+# 대시보드 KPI에서 사용하는 고정 기준값.
+DASHBOARD_EXPIRING_DAYS = 14
+DASHBOARD_LOW_BALANCE_MAX_REMAINING = 3
+
+REREGISTRATION_REASONS = (
+    "LOW_REMAINING_SESSIONS",
+    "EXPIRING_SOON",
+    "ALL_PASSES_EXHAUSTED",
+    "EXPIRED_WITH_RECENT_ATTENDANCE",
+)
+
+PASS_TYPE_ANALYTICS_SORT_FIELDS = {
+    "issued_count": "issued_count",
+    "issued_sessions": "issued_sessions",
+    "issued_price_total": "issued_price_total",
+    "remaining_sessions": "remaining_sessions",
+    "used_sessions": "used_sessions",
+    "completed_attendance_count": "completed_attendance_count",
+    "pass_type_name": "pass_type_name_snapshot",
+    "pass_type_id": "pass_type_id_snapshot",
+}
+
+PENDING_ATTENDANCE_SORT_FIELDS = {
+    "scheduled_at": "ar.scheduled_at",
+    "id": "ar.id",
+    "student_name": "ar.student_name_snapshot",
+    "class_name": "ar.class_name",
+}
+
+EXPIRING_PASS_SORT_FIELDS = {
+    "expire_date": "sp.expire_date",
+    "remaining_sessions": "sp.remaining_sessions",
+    "student_name": "s.name",
+    "id": "sp.id",
+}
+
+LOW_BALANCE_PASS_SORT_FIELDS = {
+    "remaining_sessions": "sp.remaining_sessions",
+    "expire_date": "sp.expire_date",
+    "student_name": "s.name",
+    "id": "sp.id",
+}
+
+REREGISTRATION_SORT_FIELDS = {
+    "nearest_expire_date": (
+        "nearest_expire_date IS NULL, nearest_expire_date"
+    ),
+    "remaining_sessions": "remaining_sessions",
+    "last_completed_at": "last_completed_at IS NULL, last_completed_at",
+    "student_name": "student_name",
+    "student_id": "student_id",
+}
+
+
+def _resolve_period(
+    date_from: str | None,
+    date_to: str | None,
+) -> tuple[date, date]:
+    """조회 기간을 확정한다. 기본값은 오늘을 포함한 최근 30일이다."""
+    end = date.fromisoformat(date_to) if date_to else date.today()
+    start = (
+        date.fromisoformat(date_from)
+        if date_from
+        else end - timedelta(days=29)
+    )
+    if start > end:
+        raise _error(
+            400,
+            "INVALID_DATE_RANGE",
+            "조회 시작일이 종료일보다 늦습니다.",
+            date_from=start.isoformat(),
+            date_to=end.isoformat(),
+        )
+    return start, end
+
+
+# students.created_at 등 DB 기본값(CURRENT_TIMESTAMP)은 UTC로 저장되는
+# 반면, 만료일·구매일 등 애플리케이션이 기록하는 값과 _today()는 로컬
+# 시각이다. 등록일 기준 집계는 로컬 날짜로 변환해 비교한다.
+STUDENT_CREATED_LOCAL = "datetime(created_at, 'localtime')"
+
+
+def _period_expression(column: str, group_by: str) -> str:
+    """집계 단위별 기간 키 SQL 식을 만든다(허용값만 사용)."""
+    date_part = f"substr({column}, 1, 10)"
+    if group_by == "day":
+        return date_part
+    if group_by == "week":
+        # 해당 주의 월요일. SQLite 'weekday 0'은 다음 일요일로 이동한다.
+        return f"date({date_part}, 'weekday 0', '-6 days')"
+    if group_by == "month":
+        return f"date({date_part}, 'start of month')"
+    raise _error(
+        422,
+        "INVALID_GROUP_BY",
+        "집계 단위는 day, week, month 중 하나여야 합니다.",
+        group_by=group_by,
+    )
+
+
+def _period_key(value: date, group_by: str) -> str:
+    if group_by == "week":
+        return (value - timedelta(days=value.weekday())).isoformat()
+    if group_by == "month":
+        return value.replace(day=1).isoformat()
+    return value.isoformat()
+
+
+def _period_keys(start: date, end: date, group_by: str) -> list[str]:
+    """기간 전체의 키를 순서대로 만든다(데이터가 없는 구간도 포함)."""
+    keys: list[str] = []
+    seen: set[str] = set()
+    current = start
+    while current <= end:
+        key = _period_key(current, group_by)
+        if key not in seen:
+            seen.add(key)
+            keys.append(key)
+        current += timedelta(days=1)
+    return keys
+
+
+def _change(current: int, previous: int) -> dict[str, Any]:
+    """직전 기간 대비 증감. 직전 값이 0이면 비율은 null로 둔다."""
+    return {
+        "count": current - previous,
+        "rate": (
+            None
+            if previous == 0
+            else round((current - previous) / previous * 100, 2)
+        ),
+    }
+
+
+def get_dashboard_analytics(
+    academy_id: int,
+    *,
+    date_from: str | None,
+    date_to: str | None,
+) -> dict[str, Any]:
+    """운영 대시보드 KPI를 한 번에 조회한다."""
+    start, end = _resolve_period(date_from, date_to)
+    start_text = start.isoformat()
+    end_text = end.isoformat()
+    today = _today()
+    now = _now()
+    expiring_limit = (
+        date.fromisoformat(today)
+        + timedelta(days=DASHBOARD_EXPIRING_DAYS)
+    ).isoformat()
+    connection = _connect()
+    try:
+        _get_academy_row(connection, academy_id)
+        students = connection.execute(
+            f"""
+            SELECT
+                COUNT(*) AS total,
+                COALESCE(SUM(CASE
+                    WHEN expire_date IS NOT NULL AND expire_date >= ?
+                    THEN 1 ELSE 0
+                END), 0) AS active,
+                COALESCE(SUM(CASE
+                    WHEN substr({STUDENT_CREATED_LOCAL}, 1, 10)
+                         BETWEEN ? AND ?
+                    THEN 1 ELSE 0
+                END), 0) AS new_in_period
+            FROM students
+            WHERE academy_id = ?
+            """,
+            (today, start_text, end_text, academy_id),
+        ).fetchone()
+        passes = connection.execute(
+            """
+            SELECT
+                COALESCE(SUM(CASE
+                    WHEN substr(sp.purchased_at, 1, 10) BETWEEN ? AND ?
+                    THEN 1 ELSE 0
+                END), 0) AS issued_in_period,
+                COALESCE(SUM(CASE
+                    WHEN sp.remaining_sessions > 0 AND sp.expire_date >= ?
+                    THEN 1 ELSE 0
+                END), 0) AS available,
+                COALESCE(SUM(sp.remaining_sessions), 0)
+                    AS total_remaining_sessions,
+                COALESCE(SUM(CASE
+                    WHEN sp.remaining_sessions > 0
+                     AND sp.expire_date >= ?
+                     AND sp.expire_date <= ?
+                    THEN 1 ELSE 0
+                END), 0) AS expiring_within_14_days,
+                COALESCE(SUM(CASE
+                    WHEN sp.expire_date >= ? AND sp.remaining_sessions <= ?
+                    THEN 1 ELSE 0
+                END), 0) AS low_balance_count
+            FROM student_passes AS sp
+            JOIN students AS s ON s.id = sp.student_id
+            WHERE s.academy_id = ?
+            """,
+            (
+                start_text,
+                end_text,
+                today,
+                today,
+                expiring_limit,
+                today,
+                DASHBOARD_LOW_BALANCE_MAX_REMAINING,
+                academy_id,
+            ),
+        ).fetchone()
+        attendance = connection.execute(
+            """
+            SELECT
+                COALESCE(SUM(CASE
+                    WHEN status = 'RESERVED'
+                     AND substr(scheduled_at, 1, 10) BETWEEN ? AND ?
+                    THEN 1 ELSE 0
+                END), 0) AS reserved_in_period,
+                COALESCE(SUM(CASE
+                    WHEN status = 'COMPLETED'
+                     AND substr(scheduled_at, 1, 10) BETWEEN ? AND ?
+                    THEN 1 ELSE 0
+                END), 0) AS completed_in_period,
+                COALESCE(SUM(CASE
+                    WHEN status = 'CANCELLED'
+                     AND substr(scheduled_at, 1, 10) BETWEEN ? AND ?
+                    THEN 1 ELSE 0
+                END), 0) AS cancelled_in_period,
+                COALESCE(SUM(CASE
+                    WHEN status = 'RESERVED' AND scheduled_at < ?
+                    THEN 1 ELSE 0
+                END), 0) AS pending_past
+            FROM attendance_records
+            WHERE academy_id = ?
+            """,
+            (
+                start_text,
+                end_text,
+                start_text,
+                end_text,
+                start_text,
+                end_text,
+                now,
+                academy_id,
+            ),
+        ).fetchone()
+        total_students = students["total"]
+        active_students = students["active"]
+        return {
+            "period": {
+                "date_from": start_text,
+                "date_to": end_text,
+            },
+            "students": {
+                "total": total_students,
+                "active": active_students,
+                "inactive": total_students - active_students,
+                "new_in_period": students["new_in_period"],
+            },
+            "student_passes": {
+                key: passes[key]
+                for key in (
+                    "issued_in_period",
+                    "available",
+                    "total_remaining_sessions",
+                    "expiring_within_14_days",
+                    "low_balance_count",
+                )
+            },
+            "attendance": {
+                key: attendance[key]
+                for key in (
+                    "reserved_in_period",
+                    "completed_in_period",
+                    "cancelled_in_period",
+                    "pending_past",
+                )
+            },
+        }
+    finally:
+        connection.close()
+
+
+def get_registration_analytics(
+    academy_id: int,
+    *,
+    date_from: str | None,
+    date_to: str | None,
+    group_by: str,
+) -> dict[str, Any]:
+    """신규 수강생과 수강권 발급 추이를 조회한다."""
+    start, end = _resolve_period(date_from, date_to)
+    length = (end - start).days + 1
+    previous_end = start - timedelta(days=1)
+    previous_start = previous_end - timedelta(days=length - 1)
+    student_period = _period_expression(STUDENT_CREATED_LOCAL, group_by)
+    pass_period = _period_expression("sp.purchased_at", group_by)
+    connection = _connect()
+    try:
+        _get_academy_row(connection, academy_id)
+
+        def count_students(period_start: date, period_end: date) -> int:
+            return connection.execute(
+                f"""
+                SELECT COUNT(*)
+                FROM students
+                WHERE academy_id = ?
+                  AND substr({STUDENT_CREATED_LOCAL}, 1, 10)
+                      BETWEEN ? AND ?
+                """,
+                (
+                    academy_id,
+                    period_start.isoformat(),
+                    period_end.isoformat(),
+                ),
+            ).fetchone()[0]
+
+        def count_passes(period_start: date, period_end: date) -> int:
+            return connection.execute(
+                """
+                SELECT COUNT(*)
+                FROM student_passes AS sp
+                JOIN students AS s ON s.id = sp.student_id
+                WHERE s.academy_id = ?
+                  AND substr(sp.purchased_at, 1, 10) BETWEEN ? AND ?
+                """,
+                (
+                    academy_id,
+                    period_start.isoformat(),
+                    period_end.isoformat(),
+                ),
+            ).fetchone()[0]
+
+        student_rows = connection.execute(
+            f"""
+            SELECT {student_period} AS period, COUNT(*) AS students
+            FROM students
+            WHERE academy_id = ?
+              AND substr({STUDENT_CREATED_LOCAL}, 1, 10) BETWEEN ? AND ?
+            GROUP BY period
+            """,
+            (academy_id, start.isoformat(), end.isoformat()),
+        ).fetchall()
+        pass_rows = connection.execute(
+            f"""
+            SELECT {pass_period} AS period, COUNT(*) AS student_passes
+            FROM student_passes AS sp
+            JOIN students AS s ON s.id = sp.student_id
+            WHERE s.academy_id = ?
+              AND substr(sp.purchased_at, 1, 10) BETWEEN ? AND ?
+            GROUP BY period
+            """,
+            (academy_id, start.isoformat(), end.isoformat()),
+        ).fetchall()
+
+        student_counts = {row["period"]: row["students"] for row in student_rows}
+        pass_counts = {
+            row["period"]: row["student_passes"] for row in pass_rows
+        }
+        total_students = count_students(start, end)
+        total_passes = count_passes(start, end)
+        previous_students = count_students(previous_start, previous_end)
+        previous_passes = count_passes(previous_start, previous_end)
+        return {
+            "period": {
+                "date_from": start.isoformat(),
+                "date_to": end.isoformat(),
+            },
+            "group_by": group_by,
+            "total_students": total_students,
+            "total_student_passes": total_passes,
+            "previous_period": {
+                "date_from": previous_start.isoformat(),
+                "date_to": previous_end.isoformat(),
+                "total_students": previous_students,
+                "total_student_passes": previous_passes,
+            },
+            "student_change": _change(total_students, previous_students),
+            "student_pass_change": _change(total_passes, previous_passes),
+            "series": [
+                {
+                    "period": key,
+                    "students": student_counts.get(key, 0),
+                    "student_passes": pass_counts.get(key, 0),
+                }
+                for key in _period_keys(start, end, group_by)
+            ],
+        }
+    finally:
+        connection.close()
+
+
+def get_attendance_analytics(
+    academy_id: int,
+    *,
+    date_from: str | None,
+    date_to: str | None,
+    group_by: str,
+) -> dict[str, Any]:
+    """예약·완료·취소와 미처리 예약 추이를 조회한다."""
+    start, end = _resolve_period(date_from, date_to)
+    start_text = start.isoformat()
+    end_text = end.isoformat()
+    now = _now()
+    period_expression = _period_expression("scheduled_at", group_by)
+    connection = _connect()
+    try:
+        _get_academy_row(connection, academy_id)
+        totals = connection.execute(
+            """
+            SELECT
+                COALESCE(SUM(CASE WHEN status = 'RESERVED' THEN 1 ELSE 0 END), 0)
+                    AS reserved,
+                COALESCE(SUM(CASE WHEN status = 'COMPLETED' THEN 1 ELSE 0 END), 0)
+                    AS completed,
+                COALESCE(SUM(CASE WHEN status = 'CANCELLED' THEN 1 ELSE 0 END), 0)
+                    AS cancelled,
+                COALESCE(SUM(CASE
+                    WHEN status = 'RESERVED' AND scheduled_at < ?
+                    THEN 1 ELSE 0
+                END), 0) AS pending_past
+            FROM attendance_records
+            WHERE academy_id = ?
+              AND substr(scheduled_at, 1, 10) BETWEEN ? AND ?
+            """,
+            (now, academy_id, start_text, end_text),
+        ).fetchone()
+        series_rows = connection.execute(
+            f"""
+            SELECT
+                {period_expression} AS period,
+                COALESCE(SUM(CASE WHEN status = 'RESERVED' THEN 1 ELSE 0 END), 0)
+                    AS reserved,
+                COALESCE(SUM(CASE WHEN status = 'COMPLETED' THEN 1 ELSE 0 END), 0)
+                    AS completed,
+                COALESCE(SUM(CASE WHEN status = 'CANCELLED' THEN 1 ELSE 0 END), 0)
+                    AS cancelled
+            FROM attendance_records
+            WHERE academy_id = ?
+              AND substr(scheduled_at, 1, 10) BETWEEN ? AND ?
+            GROUP BY period
+            """,
+            (academy_id, start_text, end_text),
+        ).fetchall()
+        by_class_name = connection.execute(
+            """
+            SELECT class_name, COUNT(*) AS completed
+            FROM attendance_records
+            WHERE academy_id = ?
+              AND status = 'COMPLETED'
+              AND substr(scheduled_at, 1, 10) BETWEEN ? AND ?
+            GROUP BY class_name
+            ORDER BY completed DESC, class_name ASC
+            """,
+            (academy_id, start_text, end_text),
+        ).fetchall()
+        by_pass_type = connection.execute(
+            """
+            SELECT
+                pass_type_id_snapshot,
+                MAX(pass_type_name_snapshot) AS pass_type_name_snapshot,
+                COUNT(*) AS completed
+            FROM attendance_records
+            WHERE academy_id = ?
+              AND status = 'COMPLETED'
+              AND substr(scheduled_at, 1, 10) BETWEEN ? AND ?
+            GROUP BY pass_type_id_snapshot
+            ORDER BY completed DESC, pass_type_id_snapshot ASC
+            """,
+            (academy_id, start_text, end_text),
+        ).fetchall()
+        series_map = {row["period"]: row for row in series_rows}
+        return {
+            "period": {"date_from": start_text, "date_to": end_text},
+            "group_by": group_by,
+            "totals": {
+                key: totals[key]
+                for key in ("reserved", "completed", "cancelled", "pending_past")
+            },
+            "series": [
+                {
+                    "period": key,
+                    "reserved": (
+                        series_map[key]["reserved"] if key in series_map else 0
+                    ),
+                    "completed": (
+                        series_map[key]["completed"] if key in series_map else 0
+                    ),
+                    "cancelled": (
+                        series_map[key]["cancelled"] if key in series_map else 0
+                    ),
+                }
+                for key in _period_keys(start, end, group_by)
+            ],
+            "by_class_name": [dict(row) for row in by_class_name],
+            "by_pass_type": [dict(row) for row in by_pass_type],
+        }
+    finally:
+        connection.close()
+
+
+def get_pass_type_analytics(
+    academy_id: int,
+    *,
+    date_from: str | None,
+    date_to: str | None,
+    limit: int,
+    offset: int,
+    sort: str,
+    order: str,
+) -> dict[str, Any]:
+    """기간 내 발급된 수강권을 종류 스냅샷 기준으로 집계한다."""
+    start, end = _resolve_period(date_from, date_to)
+    ordering = _sort_clause(sort, order, PASS_TYPE_ANALYTICS_SORT_FIELDS)
+    parameters = (academy_id, start.isoformat(), end.isoformat())
+    grouped_sql = """
+        SELECT
+            sp.pass_type_id_snapshot AS pass_type_id_snapshot,
+            MAX(sp.pass_type_name_snapshot) AS pass_type_name_snapshot,
+            COUNT(*) AS issued_count,
+            COALESCE(SUM(sp.total_sessions), 0) AS issued_sessions,
+            COALESCE(SUM(sp.remaining_sessions), 0) AS remaining_sessions,
+            COALESCE(
+                SUM(sp.total_sessions - sp.remaining_sessions), 0
+            ) AS used_sessions,
+            COALESCE(SUM(sp.price_snapshot), 0) AS issued_price_total,
+            COALESCE(SUM((
+                SELECT COUNT(*)
+                FROM attendance_records AS ar
+                WHERE ar.student_pass_id = sp.id
+                  AND ar.status = 'COMPLETED'
+            )), 0) AS completed_attendance_count
+        FROM student_passes AS sp
+        JOIN students AS s ON s.id = sp.student_id
+        WHERE s.academy_id = ?
+          AND substr(sp.purchased_at, 1, 10) BETWEEN ? AND ?
+        GROUP BY sp.pass_type_id_snapshot
+    """
+    connection = _connect()
+    try:
+        _get_academy_row(connection, academy_id)
+        rows = connection.execute(
+            f"{grouped_sql} ORDER BY {ordering} LIMIT ? OFFSET ?",
+            (*parameters, limit, offset),
+        ).fetchall()
+        total = connection.execute(
+            f"SELECT COUNT(*) FROM ({grouped_sql})",
+            parameters,
+        ).fetchone()[0]
+        return {
+            "period": {
+                "date_from": start.isoformat(),
+                "date_to": end.isoformat(),
+            },
+            "items": [dict(row) for row in rows],
+            "pagination": {
+                "limit": limit,
+                "offset": offset,
+                "total": total,
+            },
+        }
+    finally:
+        connection.close()
+
+
+def list_pending_attendance(
+    academy_id: int,
+    *,
+    scheduled_before: str | None,
+    scheduled_from: str | None,
+    limit: int,
+    offset: int,
+    sort: str,
+    order: str,
+) -> dict[str, Any]:
+    """예정 시각이 지났는데 아직 RESERVED 상태인 예약을 조회한다.
+
+    현재 스키마에는 결석 상태가 없으므로 결석 확정이 아니라 '미처리
+    예약'으로만 해석한다.
+    """
+    ordering = _sort_clause(sort, order, PENDING_ATTENDANCE_SORT_FIELDS)
+    conditions = [
+        "ar.academy_id = ?",
+        "ar.status = 'RESERVED'",
+        "ar.scheduled_at < ?",
+    ]
+    parameters: list[Any] = [academy_id, scheduled_before or _now()]
+    if scheduled_from:
+        conditions.append("ar.scheduled_at >= ?")
+        parameters.append(scheduled_from)
+    where = f" WHERE {' AND '.join(conditions)}"
+    connection = _connect()
+    try:
+        _get_academy_row(connection, academy_id)
+        return _page(
+            connection,
+            f"""
+            SELECT
+                ar.id AS attendance_record_id,
+                ar.student_id AS student_id,
+                ar.student_name_snapshot AS student_name,
+                ar.student_pass_id AS student_pass_id,
+                ar.pass_type_id_snapshot AS pass_type_id_snapshot,
+                ar.pass_type_name_snapshot AS pass_type_name,
+                ar.class_name AS class_name,
+                ar.scheduled_at AS scheduled_at,
+                ar.status AS status,
+                sp.remaining_sessions AS remaining_sessions,
+                sp.expire_date AS expire_date
+            FROM attendance_records AS ar
+            LEFT JOIN student_passes AS sp ON sp.id = ar.student_pass_id
+            {where}
+            ORDER BY {ordering}
+            """,
+            f"SELECT COUNT(*) FROM attendance_records AS ar{where}",
+            parameters,
+            limit,
+            offset,
+        )
+    finally:
+        connection.close()
+
+
+def list_expiring_passes(
+    academy_id: int,
+    *,
+    days: int,
+    include_expired: bool,
+    remaining_only: bool,
+    expired_only: bool,
+    limit: int,
+    offset: int,
+    sort: str,
+    order: str,
+) -> dict[str, Any]:
+    """지정한 일수 안에 만료되는 보유 수강권을 조회한다.
+
+    `expired_only`가 참이면 이미 만료된 수강권만 조회한다. 잔여 횟수가
+    남은 채로 만료된 수강권을 찾을 때 사용한다.
+    """
+    today = _today()
+    limit_date = (
+        date.fromisoformat(today) + timedelta(days=days)
+    ).isoformat()
+    ordering = _sort_clause(sort, order, EXPIRING_PASS_SORT_FIELDS)
+    conditions = ["s.academy_id = ?", "sp.expire_date <= ?"]
+    parameters: list[Any] = [academy_id, limit_date]
+    if expired_only:
+        conditions.append("sp.expire_date < ?")
+        parameters.append(today)
+    elif not include_expired:
+        conditions.append("sp.expire_date >= ?")
+        parameters.append(today)
+    if remaining_only:
+        conditions.append("sp.remaining_sessions > 0")
+    where = f" WHERE {' AND '.join(conditions)}"
+    connection = _connect()
+    try:
+        _get_academy_row(connection, academy_id)
+        page = _page(
+            connection,
+            f"""
+            SELECT
+                sp.id AS student_pass_id,
+                sp.student_id AS student_id,
+                s.name AS student_name,
+                s.phone AS student_phone,
+                sp.pass_type_id_snapshot AS pass_type_id_snapshot,
+                sp.pass_type_name_snapshot AS pass_type_name,
+                sp.total_sessions AS total_sessions,
+                sp.remaining_sessions AS remaining_sessions,
+                sp.expire_date AS expire_date,
+                (
+                    SELECT MAX(ar.completed_at)
+                    FROM attendance_records AS ar
+                    WHERE ar.student_pass_id = sp.id
+                      AND ar.status = 'COMPLETED'
+                ) AS last_completed_at
+            FROM student_passes AS sp
+            JOIN students AS s ON s.id = sp.student_id
+            {where}
+            ORDER BY {ordering}
+            """,
+            f"""
+            SELECT COUNT(*)
+            FROM student_passes AS sp
+            JOIN students AS s ON s.id = sp.student_id
+            {where}
+            """,
+            parameters,
+            limit,
+            offset,
+        )
+        # 남은 일수는 SELECT 절 파라미터를 늘리지 않도록 여기서 계산한다.
+        today_date = date.fromisoformat(today)
+        page["items"] = [
+            {
+                **item,
+                "days_left": (
+                    date.fromisoformat(item["expire_date"]) - today_date
+                ).days,
+            }
+            for item in page["items"]
+        ]
+        return page
+    finally:
+        connection.close()
+
+
+def list_low_balance_passes(
+    academy_id: int,
+    *,
+    max_remaining: int,
+    available_only: bool,
+    limit: int,
+    offset: int,
+    sort: str,
+    order: str,
+) -> dict[str, Any]:
+    """잔여 횟수가 기준 이하인 보유 수강권을 조회한다."""
+    today = _today()
+    ordering = _sort_clause(sort, order, LOW_BALANCE_PASS_SORT_FIELDS)
+    conditions = ["s.academy_id = ?", "sp.remaining_sessions <= ?"]
+    parameters: list[Any] = [academy_id, max_remaining]
+    if available_only:
+        conditions.append("sp.expire_date >= ?")
+        parameters.append(today)
+    where = f" WHERE {' AND '.join(conditions)}"
+    connection = _connect()
+    try:
+        _get_academy_row(connection, academy_id)
+        return _page(
+            connection,
+            f"""
+            SELECT
+                sp.id AS student_pass_id,
+                sp.student_id AS student_id,
+                s.name AS student_name,
+                s.phone AS student_phone,
+                sp.pass_type_id_snapshot AS pass_type_id_snapshot,
+                sp.pass_type_name_snapshot AS pass_type_name,
+                sp.total_sessions AS total_sessions,
+                sp.remaining_sessions AS remaining_sessions,
+                sp.expire_date AS expire_date,
+                (
+                    SELECT MAX(ar.completed_at)
+                    FROM attendance_records AS ar
+                    WHERE ar.student_pass_id = sp.id
+                      AND ar.status = 'COMPLETED'
+                ) AS last_completed_at
+            FROM student_passes AS sp
+            JOIN students AS s ON s.id = sp.student_id
+            {where}
+            ORDER BY {ordering}
+            """,
+            f"""
+            SELECT COUNT(*)
+            FROM student_passes AS sp
+            JOIN students AS s ON s.id = sp.student_id
+            {where}
+            """,
+            parameters,
+            limit,
+            offset,
+        )
+    finally:
+        connection.close()
+
+
+def _reregistration_reasons(
+    row: sqlite3.Row,
+    *,
+    max_remaining: int,
+    expiring_limit: str,
+    recent_threshold: str,
+) -> list[str]:
+    """후보 사유 코드를 SQL 조건과 동일한 순서로 만든다."""
+    reasons: list[str] = []
+    if (
+        row["available_count"] > 0
+        and row["available_remaining_sessions"] <= max_remaining
+    ):
+        reasons.append("LOW_REMAINING_SESSIONS")
+    if (
+        row["available_count"] > 0
+        and row["nearest_expire_date"] is not None
+        and row["nearest_expire_date"] <= expiring_limit
+    ):
+        reasons.append("EXPIRING_SOON")
+    if row["pass_count"] > 0 and row["total_remaining_sessions"] == 0:
+        reasons.append("ALL_PASSES_EXHAUSTED")
+    if (
+        row["available_count"] == 0
+        and row["expired_pass_count"] > 0
+        and row["last_completed_at"] is not None
+        and row["last_completed_at"][:10] >= recent_threshold
+    ):
+        reasons.append("EXPIRED_WITH_RECENT_ATTENDANCE")
+    return reasons
+
+
+def list_reregistration_candidates(
+    academy_id: int,
+    *,
+    max_remaining: int,
+    expiring_within_days: int,
+    recent_attendance_days: int,
+    limit: int,
+    offset: int,
+    sort: str,
+    order: str,
+) -> dict[str, Any]:
+    """재등록 상담이 필요한 수강생 후보를 사유 코드와 함께 조회한다."""
+    today = date.fromisoformat(_today())
+    expiring_limit = (
+        today + timedelta(days=expiring_within_days)
+    ).isoformat()
+    recent_threshold = (
+        today - timedelta(days=recent_attendance_days)
+    ).isoformat()
+    today_text = today.isoformat()
+    ordering = _sort_clause(sort, order, REREGISTRATION_SORT_FIELDS)
+    aggregate_sql = """
+        SELECT
+            s.id AS student_id,
+            s.name AS student_name,
+            s.phone AS student_phone,
+            s.expire_date AS student_expire_date,
+            COUNT(sp.id) AS pass_count,
+            COALESCE(SUM(sp.remaining_sessions), 0)
+                AS total_remaining_sessions,
+            COALESCE(SUM(CASE
+                WHEN sp.remaining_sessions > 0 AND sp.expire_date >= ?
+                THEN 1 ELSE 0
+            END), 0) AS available_count,
+            COALESCE(SUM(CASE
+                WHEN sp.remaining_sessions > 0 AND sp.expire_date >= ?
+                THEN sp.remaining_sessions ELSE 0
+            END), 0) AS available_remaining_sessions,
+            MIN(CASE
+                WHEN sp.remaining_sessions > 0 AND sp.expire_date >= ?
+                THEN sp.expire_date
+            END) AS nearest_expire_date,
+            COALESCE(SUM(CASE
+                WHEN sp.expire_date < ? THEN 1 ELSE 0
+            END), 0) AS expired_pass_count,
+            (
+                SELECT MAX(ar.completed_at)
+                FROM attendance_records AS ar
+                WHERE ar.student_id = s.id AND ar.status = 'COMPLETED'
+            ) AS last_completed_at
+        FROM students AS s
+        LEFT JOIN student_passes AS sp ON sp.student_id = s.id
+        WHERE s.academy_id = ?
+        GROUP BY s.id
+    """
+    candidate_sql = f"""
+        SELECT *
+        FROM ({aggregate_sql})
+        WHERE (available_count > 0
+               AND available_remaining_sessions <= ?)
+           OR (available_count > 0
+               AND nearest_expire_date IS NOT NULL
+               AND nearest_expire_date <= ?)
+           OR (pass_count > 0 AND total_remaining_sessions = 0)
+           OR (available_count = 0
+               AND expired_pass_count > 0
+               AND last_completed_at IS NOT NULL
+               AND substr(last_completed_at, 1, 10) >= ?)
+    """
+    parameters = (
+        today_text,
+        today_text,
+        today_text,
+        today_text,
+        academy_id,
+        max_remaining,
+        expiring_limit,
+        recent_threshold,
+    )
+    connection = _connect()
+    try:
+        _get_academy_row(connection, academy_id)
+        rows = connection.execute(
+            f"{candidate_sql} ORDER BY {ordering} LIMIT ? OFFSET ?",
+            (*parameters, limit, offset),
+        ).fetchall()
+        total = connection.execute(
+            f"SELECT COUNT(*) FROM ({candidate_sql})",
+            parameters,
+        ).fetchone()[0]
+        items = []
+        for row in rows:
+            items.append(
+                {
+                    "student_id": row["student_id"],
+                    "student_name": row["student_name"],
+                    "student_phone": row["student_phone"],
+                    "student_expire_date": row["student_expire_date"],
+                    "pass_count": row["pass_count"],
+                    "remaining_sessions": row[
+                        "available_remaining_sessions"
+                    ],
+                    "total_remaining_sessions": row[
+                        "total_remaining_sessions"
+                    ],
+                    "available_pass_count": row["available_count"],
+                    "nearest_expire_date": row["nearest_expire_date"],
+                    "last_completed_at": row["last_completed_at"],
+                    "reasons": _reregistration_reasons(
+                        row,
+                        max_remaining=max_remaining,
+                        expiring_limit=expiring_limit,
+                        recent_threshold=recent_threshold,
+                    ),
+                }
+            )
+        return {
+            "criteria": {
+                "max_remaining": max_remaining,
+                "expiring_within_days": expiring_within_days,
+                "recent_attendance_days": recent_attendance_days,
+            },
+            "items": items,
+            "pagination": {
+                "limit": limit,
+                "offset": offset,
+                "total": total,
+            },
+        }
+    finally:
+        connection.close()
+
+
+def check_ledger_consistency(academy_id: int) -> dict[str, Any]:
+    """보유 수강권의 잔여 횟수와 수강 기록 차감 합계를 비교한다.
+
+    조회 전용이며 어떤 값도 자동으로 고치지 않는다.
+    """
+    connection = _connect()
+    try:
+        _get_academy_row(connection, academy_id)
+        rows = connection.execute(
+            """
+            SELECT
+                sp.id AS student_pass_id,
+                sp.student_id AS student_id,
+                s.name AS student_name,
+                sp.pass_type_name_snapshot AS pass_type_name,
+                sp.total_sessions AS total_sessions,
+                sp.remaining_sessions AS stored_remaining_sessions,
+                sp.total_sessions + COALESCE((
+                    SELECT SUM(ar.session_delta)
+                    FROM attendance_records AS ar
+                    WHERE ar.student_pass_id = sp.id
+                ), 0) AS expected_remaining_sessions
+            FROM student_passes AS sp
+            JOIN students AS s ON s.id = sp.student_id
+            WHERE s.academy_id = ?
+            ORDER BY sp.id ASC
+            """,
+            (academy_id,),
+        ).fetchall()
+        items = [
+            {
+                **dict(row),
+                "difference": (
+                    row["stored_remaining_sessions"]
+                    - row["expected_remaining_sessions"]
+                ),
+            }
+            for row in rows
+            if row["stored_remaining_sessions"]
+            != row["expected_remaining_sessions"]
+        ]
+        return {
+            "academy_id": academy_id,
+            "checked_count": len(rows),
+            "mismatch_count": len(items),
+            "items": items,
+        }
+    finally:
+        connection.close()

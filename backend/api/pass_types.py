@@ -23,6 +23,7 @@ router = APIRouter(
 @router.get(
     "",
     response_model=Page[PassTypeResponse],
+    operation_id="list_pass_types",
     summary="수강권 종류 목록 조회",
 )
 def list_pass_types(
@@ -59,6 +60,7 @@ def list_pass_types(
     "",
     response_model=PassTypeResponse,
     status_code=status.HTTP_201_CREATED,
+    operation_id="create_pass_type",
     summary="수강권 종류 생성",
 )
 def create_pass_type(
@@ -74,6 +76,7 @@ def create_pass_type(
 @router.get(
     "/{pass_type_id}",
     response_model=PassTypeResponse,
+    operation_id="get_pass_type",
     summary="수강권 종류 상세 조회",
 )
 def get_pass_type(academy_id: int, pass_type_id: int) -> dict:
@@ -83,6 +86,7 @@ def get_pass_type(academy_id: int, pass_type_id: int) -> dict:
 @router.patch(
     "/{pass_type_id}",
     response_model=PassTypeResponse,
+    operation_id="update_pass_type",
     summary="수강권 종류 수정",
 )
 def update_pass_type(
@@ -100,6 +104,7 @@ def update_pass_type(
 @router.delete(
     "/{pass_type_id}",
     status_code=status.HTTP_204_NO_CONTENT,
+    operation_id="delete_pass_type",
     summary="수강권 종류 삭제",
 )
 def delete_pass_type(

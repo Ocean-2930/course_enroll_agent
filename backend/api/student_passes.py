@@ -26,6 +26,7 @@ router = APIRouter(
 @router.get(
     "",
     response_model=Page[StudentPassResponse],
+    operation_id="list_student_passes",
     summary="보유 수강권 목록 조회",
 )
 def list_student_passes(
@@ -63,6 +64,7 @@ def list_student_passes(
     "",
     response_model=StudentPassIssueResponse,
     status_code=status.HTTP_201_CREATED,
+    operation_id="issue_student_pass",
     summary="수강권 발급",
     description="수강권 발급과 학생 만료일 갱신을 한 트랜잭션으로 처리합니다.",
 )
@@ -81,6 +83,7 @@ def issue_student_pass(
 @router.get(
     "/{student_pass_id}",
     response_model=StudentPassResponse,
+    operation_id="get_student_pass",
     summary="보유 수강권 상세 조회",
 )
 def get_student_pass(
@@ -98,6 +101,7 @@ def get_student_pass(
 @router.patch(
     "/{student_pass_id}",
     response_model=StudentPassResponse,
+    operation_id="update_student_pass",
     summary="보유 수강권 수정",
 )
 def update_student_pass(
@@ -117,6 +121,7 @@ def update_student_pass(
 @router.delete(
     "/{student_pass_id}",
     status_code=status.HTTP_204_NO_CONTENT,
+    operation_id="delete_student_pass",
     summary="보유 수강권 삭제",
 )
 def delete_student_pass(
@@ -135,6 +140,7 @@ def delete_student_pass(
 @router.get(
     "/{student_pass_id}/attendance-records",
     response_model=Page[AttendanceRecordResponse],
+    operation_id="list_student_pass_attendance_records",
     summary="보유 수강권별 수강 기록 조회",
 )
 def list_student_pass_attendance_records(

@@ -77,20 +77,11 @@
         </div>
       </div>
 
-      <!-- 3단계: 역할별 화면 (사업자는 수강권 관리 + 채팅) -->
+      <!-- 3단계: 역할별 대화 화면 -->
       <div class="view" id="chatView" hidden>
-        <!-- 관리 섹션은 위에 고정되고, 남는 높이를 채팅창이 모두 차지한다.
-             채팅 내역은 채팅창 안에서만 세로 스크롤된다. -->
+        <!-- 수강권 종류 관리는 사업자 대시보드로 옮겼다.
+             이 화면은 대화에만 집중하고, 채팅 내역은 채팅창 안에서만 스크롤된다. -->
         <div class="agent-scroll">
-          <!-- 사업자 전용: 수강권 정보 관리 (항상 채팅 위) -->
-          <section class="pass-panel" id="passPanel" hidden aria-label="수강권 정보 관리">
-            <div class="pass-panel__head">
-              <h3 class="pass-panel__title">수강권 정보 관리</h3>
-              <button type="button" class="pass-add-btn" id="addPassBtn" aria-label="수강권 종류 추가">+</button>
-            </div>
-            <div class="pass-scroll" id="passScroll"></div>
-          </section>
-
           <div class="card__body" id="messages" aria-live="polite"></div>
         </div>
 
@@ -134,10 +125,6 @@
     const accountStatus = document.getElementById("accountStatus");
     const enterBtn = document.getElementById("enterBtn");
 
-    const passPanel = document.getElementById("passPanel");
-    const passScroll = document.getElementById("passScroll");
-    const addPassBtn = document.getElementById("addPassBtn");
-
     // 역할별 화면 구성 (자영업자 / 회원)
     const ROLES = {
       owner: {
@@ -147,7 +134,7 @@
         accountLead: "관리할 아카데미를 선택하세요.",
         placeholder: "예: 10회권 상품을 새로 만들어줘",
         greeting: (ctx) =>
-          `사업자 모드예요. '${ctx.academyName}' 아카데미를 기준으로 수강권 상품 등록, 회원 발급·차감, 매출 현황 중 무엇을 도와드릴까요?`,
+          `사업자 모드예요. '${ctx.academyName}' 아카데미를 기준으로 도와드릴게요. 수강권 종류 관리·회원 발급·예약 처리·운영 지표는 홈의 '사업자 대시보드'에서 바로 다룰 수 있어요.`,
       },
       member: {
         badge: "🙋",
@@ -266,348 +253,11 @@
       messagesEl.innerHTML = "";
       addMessage(role.greeting(ctx), "bot");
 
-      // 사업자만 수강권 정보 관리 섹션을 노출하고 목록을 불러온다.
-      if (currentRole === "owner") {
-        passPanel.hidden = false;
-        loadPassTypes(selected.academy.id);
-      } else {
-        passPanel.hidden = true;
-        passScroll.textContent = "";
-      }
-
       accountView.hidden = true;
       chatView.hidden = false;
       input.value = "";
       syncInput();
       input.focus();
-    }
-
-    // ---------- 수강권 정보 관리 (사업자) ----------
-    function formatPrice(price) {
-      const n = Number(price) || 0;
-      return n.toLocaleString("ko-KR") + "원";
-    }
-
-    // 순서 변경 상태 잠금
-    let reordering = false;
-
-    // 현재 화면의 실제 카드 목록(입력 카드 제외)
-    function realCards() {
-      return Array.from(
-        passScroll.querySelectorAll(".pass-card:not(.pass-card--form)")
-      );
-    }
-
-    // 첫/마지막 카드의 이동 버튼을 비활성화한다.
-    function updateMoveButtons() {
-      const cards = realCards();
-      cards.forEach((card, idx) => {
-        const left = card.querySelector('[data-role="move-left"]');
-        const right = card.querySelector('[data-role="move-right"]');
-        if (left) left.disabled = reordering || idx === 0;
-        if (right) right.disabled = reordering || idx === cards.length - 1;
-      });
-    }
-
-    // 이웃 카드와 순서(sort_index)를 맞바꾸고 서버에 반영한다.
-    async function movePass(card, dir) {
-      if (reordering) return;
-      const cards = realCards();
-      const i = cards.indexOf(card);
-      const j = dir === "left" ? i - 1 : i + 1;
-      if (i < 0 || j < 0 || j >= cards.length) return;
-
-      const other = cards[j];
-      const a = card._passType;
-      const b = other._passType;
-
-      reordering = true;
-      updateMoveButtons();
-      try {
-        await CourseApi.passTypes.update(selected.academy.id, a.id, {
-          sort_index: b.sort_index,
-        });
-        await CourseApi.passTypes.update(selected.academy.id, b.id, {
-          sort_index: a.sort_index,
-        });
-        const tmp = a.sort_index;
-        a.sort_index = b.sort_index;
-        b.sort_index = tmp;
-        // DOM 순서도 교체
-        if (dir === "left") passScroll.insertBefore(card, other);
-        else passScroll.insertBefore(other, card);
-        card.scrollIntoView({ block: "nearest", inline: "nearest" });
-      } catch (err) {
-        window.alert(CourseApi.messageFromError(err));
-      } finally {
-        reordering = false;
-        updateMoveButtons();
-      }
-    }
-
-    // 수강권 종류 카드 하나를 만든다(모든 값은 textContent로 안전하게).
-    function buildPassCard(passType) {
-      const card = document.createElement("div");
-      card.className = "pass-card";
-      card._passType = passType; // 순서 변경 시 참조
-
-      // 순서 변경 (◀ ▶)
-      const move = document.createElement("div");
-      move.className = "pass-card__move";
-      const moveLeft = document.createElement("button");
-      moveLeft.type = "button";
-      moveLeft.className = "pass-move-btn";
-      moveLeft.dataset.role = "move-left";
-      moveLeft.setAttribute("aria-label", "왼쪽으로 이동");
-      moveLeft.textContent = "◀";
-      const moveRight = document.createElement("button");
-      moveRight.type = "button";
-      moveRight.className = "pass-move-btn";
-      moveRight.dataset.role = "move-right";
-      moveRight.setAttribute("aria-label", "오른쪽으로 이동");
-      moveRight.textContent = "▶";
-      move.append(moveLeft, moveRight);
-      moveLeft.addEventListener("click", () => movePass(card, "left"));
-      moveRight.addEventListener("click", () => movePass(card, "right"));
-      card.appendChild(move);
-
-      const name = document.createElement("div");
-      name.className = "pass-card__name";
-      name.textContent = passType.name;
-
-      const meta = document.createElement("div");
-      meta.className = "pass-card__meta";
-      const sessions = document.createElement("span");
-      sessions.textContent = "총 " + passType.total_sessions + "회";
-      const validity = document.createElement("span");
-      validity.textContent = "유효기간 " + passType.validity_days + "일";
-      meta.append(sessions, validity);
-
-      const price = document.createElement("div");
-      price.className = "pass-card__price";
-      price.textContent = formatPrice(passType.price);
-
-      card.append(name, meta, price);
-
-      if (passType.description) {
-        const desc = document.createElement("div");
-        desc.className = "pass-card__desc";
-        desc.textContent = passType.description;
-        card.appendChild(desc);
-      }
-
-      // 수정 / 삭제
-      const tools = document.createElement("div");
-      tools.className = "pass-card__tools";
-      const editBtn = document.createElement("button");
-      editBtn.type = "button";
-      editBtn.className = "btn btn--ghost";
-      editBtn.textContent = "수정";
-      const delBtn = document.createElement("button");
-      delBtn.type = "button";
-      delBtn.className = "btn btn--danger";
-      delBtn.textContent = "삭제";
-      tools.append(editBtn, delBtn);
-      card.appendChild(tools);
-
-      // 수정: 카드를 수정용 입력 카드로 교체(PATCH)
-      editBtn.addEventListener("click", () => {
-        const formCard = buildPassForm({
-          initial: passType,
-          submitLabel: "저장",
-          onSubmit: (payload) =>
-            CourseApi.passTypes.update(selected.academy.id, passType.id, payload),
-          onDone: (updated) =>
-            passScroll.replaceChild(buildPassCard(updated), formCard),
-          onCancel: () =>
-            passScroll.replaceChild(buildPassCard(passType), formCard),
-        });
-        passScroll.replaceChild(formCard, card);
-        formCard.scrollIntoView({ block: "nearest", inline: "nearest" });
-        formCard.querySelector('input[data-k="name"]').focus();
-      });
-
-      // 삭제: 확인 후 DELETE
-      delBtn.addEventListener("click", async () => {
-        if (!window.confirm("'" + passType.name + "' 수강권 종류를 삭제할까요?")) {
-          return;
-        }
-        editBtn.disabled = true;
-        delBtn.disabled = true;
-        delBtn.textContent = "삭제 중…";
-        try {
-          await CourseApi.passTypes.remove(selected.academy.id, passType.id);
-          card.remove();
-          if (!realCards().length) {
-            renderPassScrollMessage("등록된 수강권 종류가 없어요. 오른쪽 + 로 추가하세요.");
-          } else {
-            updateMoveButtons();
-          }
-        } catch (err) {
-          editBtn.disabled = false;
-          delBtn.disabled = false;
-          delBtn.textContent = "삭제";
-          window.alert(CourseApi.messageFromError(err));
-        }
-      });
-
-      return card;
-    }
-
-    function renderPassScrollMessage(text) {
-      passScroll.textContent = "";
-      const msg = document.createElement("div");
-      msg.className = "pass-scroll__empty";
-      msg.textContent = text;
-      passScroll.appendChild(msg);
-    }
-
-    async function loadPassTypes(academyId) {
-      renderPassScrollMessage("수강권 종류를 불러오는 중…");
-      try {
-        // 표시 순서는 sort_index(순서 index)를 따른다.
-        const page = await CourseApi.passTypes.list(academyId, {
-          limit: 100,
-          sort: "sort_index",
-          order: "asc",
-        });
-        const items = page.items || [];
-        passScroll.textContent = "";
-        if (!items.length) {
-          renderPassScrollMessage("등록된 수강권 종류가 없어요. 오른쪽 + 로 추가하세요.");
-          return;
-        }
-        for (const item of items) {
-          passScroll.appendChild(buildPassCard(item));
-        }
-        updateMoveButtons();
-      } catch (err) {
-        renderPassScrollMessage(CourseApi.messageFromError(err));
-      }
-    }
-
-    // 생성/수정 공용 입력 카드를 만든다.
-    // opts: { initial, submitLabel, onSubmit(payload)->Promise, onDone(result), onCancel() }
-    function buildPassForm(opts) {
-      opts = opts || {};
-      const initial = opts.initial || null;
-      const submitLabel = opts.submitLabel || "저장";
-
-      const card = document.createElement("div");
-      card.className = "pass-card pass-card--form";
-      card.innerHTML =
-        '<input class="input" data-k="name" type="text" maxlength="200" placeholder="이름 (예: 10회권)" />' +
-        '<input class="input" data-k="total_sessions" type="number" min="1" placeholder="총 횟수" />' +
-        '<input class="input" data-k="validity_days" type="number" min="1" placeholder="유효기간(일)" />' +
-        '<input class="input" data-k="price" type="number" min="0" placeholder="가격(원)" />' +
-        '<textarea class="input" data-k="description" placeholder="설명 (선택)"></textarea>' +
-        '<div class="pass-card__error" data-role="error" hidden></div>' +
-        '<div class="pass-card__actions">' +
-        '  <button type="button" class="btn btn--primary" data-role="save"></button>' +
-        '  <button type="button" class="btn btn--ghost" data-role="cancel">취소</button>' +
-        "</div>";
-
-      const errorEl = card.querySelector('[data-role="error"]');
-      const saveBtn = card.querySelector('[data-role="save"]');
-      const cancelBtn = card.querySelector('[data-role="cancel"]');
-      const get = (k) => card.querySelector('[data-k="' + k + '"]');
-
-      saveBtn.textContent = submitLabel;
-
-      // 수정 모드: 기존 값 채우기(값은 폼 필드에만 들어가므로 안전)
-      if (initial) {
-        get("name").value = initial.name;
-        get("total_sessions").value = initial.total_sessions;
-        get("validity_days").value = initial.validity_days;
-        get("price").value = initial.price;
-        get("description").value = initial.description || "";
-      }
-
-      function showError(msg) {
-        errorEl.textContent = msg;
-        errorEl.hidden = false;
-      }
-
-      cancelBtn.addEventListener("click", () => {
-        if (opts.onCancel) opts.onCancel();
-      });
-
-      saveBtn.addEventListener("click", async () => {
-        const name = get("name").value.trim();
-        const total = parseInt(get("total_sessions").value, 10);
-        const validity = parseInt(get("validity_days").value, 10);
-        const priceRaw = get("price").value.trim();
-        const price = priceRaw === "" ? 0 : parseInt(priceRaw, 10);
-        const description = get("description").value.trim();
-
-        if (!name) return showError("이름을 입력해 주세요.");
-        if (!Number.isInteger(total) || total < 1)
-          return showError("총 횟수는 1 이상의 숫자여야 해요.");
-        if (!Number.isInteger(validity) || validity < 1)
-          return showError("유효기간은 1 이상의 숫자여야 해요.");
-        if (!Number.isInteger(price) || price < 0)
-          return showError("가격은 0 이상의 숫자여야 해요.");
-
-        errorEl.hidden = true;
-        // description 은 비우면 null 로 보내 서버 값도 지운다.
-        const payload = {
-          name: name,
-          total_sessions: total,
-          validity_days: validity,
-          price: price,
-          description: description || null,
-        };
-
-        saveBtn.disabled = true;
-        cancelBtn.disabled = true;
-        saveBtn.textContent = "저장 중…";
-        try {
-          const result = await opts.onSubmit(payload);
-          if (opts.onDone) opts.onDone(result);
-        } catch (err) {
-          showError(CourseApi.messageFromError(err));
-          saveBtn.disabled = false;
-          cancelBtn.disabled = false;
-          saveBtn.textContent = submitLabel;
-        }
-      });
-
-      return card;
-    }
-
-    // + 버튼: 생성용 입력 카드를 맨 앞에 추가한다.
-    function openPassForm() {
-      // 이미 열려 있는 입력 카드가 있으면 그쪽으로 포커스
-      const existing = passScroll.querySelector(".pass-card--form");
-      if (existing) {
-        existing.querySelector("input").focus();
-        return;
-      }
-      // 안내 메시지만 있는 경우 비운다.
-      const emptyMsg = passScroll.querySelector(".pass-scroll__empty");
-      if (emptyMsg) emptyMsg.remove();
-
-      const formCard = buildPassForm({
-        submitLabel: "저장",
-        onSubmit: (payload) =>
-          CourseApi.passTypes.create(selected.academy.id, payload),
-        onDone: (created) => {
-          // 새 항목은 순서상 맨 뒤(sort_index 최대)이므로 끝에 배치
-          formCard.remove();
-          passScroll.appendChild(buildPassCard(created));
-          updateMoveButtons();
-        },
-        onCancel: () => {
-          formCard.remove();
-          if (!passScroll.children.length) {
-            renderPassScrollMessage("등록된 수강권 종류가 없어요. 오른쪽 + 로 추가하세요.");
-          }
-        },
-      });
-
-      passScroll.prepend(formCard);
-      formCard.scrollIntoView({ block: "nearest", inline: "start" });
-      formCard.querySelector('input[data-k="name"]').focus();
     }
 
     // 뒤로가기: 채팅 → 계정 선택 → 역할 선택
@@ -696,7 +346,6 @@
     });
 
     enterBtn.addEventListener("click", enterChat);
-    addPassBtn.addEventListener("click", openPassForm);
 
     roleButtons.forEach((btn) => {
       btn.addEventListener("click", () => goToAccountStep(btn.dataset.role));

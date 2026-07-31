@@ -48,6 +48,14 @@
     return "요청에 실패했어요. (HTTP " + err.status + ")";
   }
 
+  // 오류에 담긴 업무 오류 코드(없으면 null). 화면에서 분기용으로 사용한다.
+  function codeFromError(err) {
+    if (err && err.body && err.body.error && err.body.error.code) {
+      return err.body.error.code;
+    }
+    return null;
+  }
+
   // 객체를 안전한 쿼리스트링으로 변환한다(빈 값은 생략).
   function toQuery(params) {
     if (!params) return "";
@@ -60,6 +68,22 @@
     return parts.length ? "?" + parts.join("&") : "";
   }
 
+  // 경로 조각 헬퍼: 아카데미/수강생 하위 경로를 반복해서 쓰지 않는다.
+  function academyPath(academyId, suffix) {
+    return "/api/academies/" + academyId + (suffix || "");
+  }
+
+  function studentPath(academyId, studentId, suffix) {
+    return academyPath(academyId, "/students/" + studentId + (suffix || ""));
+  }
+
+  function send(path, method, payload) {
+    return apiRequest(path, {
+      method: method,
+      body: JSON.stringify(payload || {}),
+    });
+  }
+
   var academies = {
     // 아카데미 목록 조회 → { items, pagination }
     list: function (params) {
@@ -67,56 +91,258 @@
     },
     // 아카데미 생성 → 생성된 아카데미 객체 반환
     create: function (payload) {
-      return apiRequest("/api/academies", {
-        method: "POST",
-        body: JSON.stringify(payload),
-      });
+      return send("/api/academies", "POST", payload);
+    },
+    // 아카데미 상세 조회
+    get: function (academyId) {
+      return apiRequest(academyPath(academyId));
+    },
+    // 아카데미 수정(부분 수정)
+    update: function (academyId, payload) {
+      return send(academyPath(academyId), "PATCH", payload);
+    },
+    // 아카데미 삭제 → 본문 없음(204)
+    remove: function (academyId) {
+      return apiRequest(academyPath(academyId), { method: "DELETE" });
+    },
+    // 아카데미 요약(회원·수강권·오늘 수강 집계)
+    summary: function (academyId) {
+      return apiRequest(academyPath(academyId, "/summary"));
     },
   };
 
   var passTypes = {
     // 특정 아카데미의 수강권 종류 목록 조회 → { items, pagination }
     list: function (academyId, params) {
-      return apiRequest(
-        "/api/academies/" + academyId + "/pass-types" + toQuery(params)
-      );
+      return apiRequest(academyPath(academyId, "/pass-types") + toQuery(params));
     },
     // 수강권 종류 생성 → 생성된 수강권 종류 객체 반환
     create: function (academyId, payload) {
-      return apiRequest("/api/academies/" + academyId + "/pass-types", {
-        method: "POST",
-        body: JSON.stringify(payload),
-      });
+      return send(academyPath(academyId, "/pass-types"), "POST", payload);
+    },
+    // 수강권 종류 상세 조회
+    get: function (academyId, passTypeId) {
+      return apiRequest(academyPath(academyId, "/pass-types/" + passTypeId));
     },
     // 수강권 종류 수정 → 수정된 수강권 종류 객체 반환
     update: function (academyId, passTypeId, payload) {
-      return apiRequest(
-        "/api/academies/" + academyId + "/pass-types/" + passTypeId,
-        { method: "PATCH", body: JSON.stringify(payload) }
+      return send(
+        academyPath(academyId, "/pass-types/" + passTypeId),
+        "PATCH",
+        payload
       );
     },
     // 수강권 종류 삭제 → 본문 없음(204)
     remove: function (academyId, passTypeId) {
-      return apiRequest(
-        "/api/academies/" + academyId + "/pass-types/" + passTypeId,
-        { method: "DELETE" }
-      );
+      return apiRequest(academyPath(academyId, "/pass-types/" + passTypeId), {
+        method: "DELETE",
+      });
     },
   };
 
   var students = {
     // 특정 아카데미의 수강생 목록 조회 → { items, pagination }
     list: function (academyId, params) {
-      return apiRequest(
-        "/api/academies/" + academyId + "/students" + toQuery(params)
-      );
+      return apiRequest(academyPath(academyId, "/students") + toQuery(params));
     },
     // 수강생 생성 → 생성된 수강생 객체 반환
     create: function (academyId, payload) {
-      return apiRequest("/api/academies/" + academyId + "/students", {
-        method: "POST",
-        body: JSON.stringify(payload),
+      return send(academyPath(academyId, "/students"), "POST", payload);
+    },
+    // 수강생 상세 조회
+    get: function (academyId, studentId) {
+      return apiRequest(studentPath(academyId, studentId));
+    },
+    // 수강생 수정(이름·전화·이메일·메모)
+    update: function (academyId, studentId, payload) {
+      return send(studentPath(academyId, studentId), "PATCH", payload);
+    },
+    // 수강생 삭제 → 본문 없음(204)
+    remove: function (academyId, studentId) {
+      return apiRequest(studentPath(academyId, studentId), {
+        method: "DELETE",
       });
+    },
+    // 수강생 요약(보유 수강권·수강 기록 집계)
+    summary: function (academyId, studentId) {
+      return apiRequest(studentPath(academyId, studentId, "/summary"));
+    },
+    // 사용 가능한 보유 수강권 배열(잔여 1회 이상 + 만료 전)
+    availablePasses: function (academyId, studentId) {
+      return apiRequest(
+        studentPath(academyId, studentId, "/available-passes")
+      );
+    },
+    // 수강생 전체 수강 기록 → { items, pagination }
+    attendanceRecords: function (academyId, studentId, params) {
+      return apiRequest(
+        studentPath(academyId, studentId, "/attendance-records") +
+          toQuery(params)
+      );
+    },
+  };
+
+  var studentPasses = {
+    // 보유 수강권 목록 → { items, pagination }
+    list: function (academyId, studentId, params) {
+      return apiRequest(
+        studentPath(academyId, studentId, "/passes") + toQuery(params)
+      );
+    },
+    // 수강권 발급(발급 + 회원 만료일 갱신이 한 트랜잭션)
+    create: function (academyId, studentId, payload) {
+      return send(studentPath(academyId, studentId, "/passes"), "POST", payload);
+    },
+    // 보유 수강권 상세 조회
+    get: function (academyId, studentId, studentPassId) {
+      return apiRequest(
+        studentPath(academyId, studentId, "/passes/" + studentPassId)
+      );
+    },
+    // 보유 수강권 수정(시작일·만료일)
+    update: function (academyId, studentId, studentPassId, payload) {
+      return send(
+        studentPath(academyId, studentId, "/passes/" + studentPassId),
+        "PATCH",
+        payload
+      );
+    },
+    // 보유 수강권 삭제 → 본문 없음(204)
+    remove: function (academyId, studentId, studentPassId) {
+      return apiRequest(
+        studentPath(academyId, studentId, "/passes/" + studentPassId),
+        { method: "DELETE" }
+      );
+    },
+    // 보유 수강권별 수강 기록 → { items, pagination }
+    attendanceRecords: function (academyId, studentId, studentPassId, params) {
+      return apiRequest(
+        studentPath(
+          academyId,
+          studentId,
+          "/passes/" + studentPassId + "/attendance-records"
+        ) + toQuery(params)
+      );
+    },
+  };
+
+  var attendanceRecords = {
+    // 수강 기록 목록 → { items, pagination }
+    list: function (academyId, params) {
+      return apiRequest(
+        academyPath(academyId, "/attendance-records") + toQuery(params)
+      );
+    },
+    // 예약 생성(예약 시점에는 잔여 횟수를 차감하지 않는다)
+    create: function (academyId, payload) {
+      return send(
+        academyPath(academyId, "/attendance-records"),
+        "POST",
+        payload
+      );
+    },
+    // 수강 기록 상세 조회
+    get: function (academyId, attendanceRecordId) {
+      return apiRequest(
+        academyPath(academyId, "/attendance-records/" + attendanceRecordId)
+      );
+    },
+    // 예약 내용 수정(RESERVED 상태만)
+    update: function (academyId, attendanceRecordId, payload) {
+      return send(
+        academyPath(academyId, "/attendance-records/" + attendanceRecordId),
+        "PATCH",
+        payload
+      );
+    },
+    // 수강 완료 처리 → 잔여 1회 차감
+    complete: function (academyId, attendanceRecordId, payload) {
+      return send(
+        academyPath(
+          academyId,
+          "/attendance-records/" + attendanceRecordId + "/complete"
+        ),
+        "POST",
+        payload
+      );
+    },
+    // 예약 취소 → 잔여 횟수 변화 없음
+    cancel: function (academyId, attendanceRecordId, payload) {
+      return send(
+        academyPath(
+          academyId,
+          "/attendance-records/" + attendanceRecordId + "/cancel"
+        ),
+        "POST",
+        payload
+      );
+    },
+    // 완료 취소 및 횟수 복구(사유 필수)
+    restore: function (academyId, attendanceRecordId, payload) {
+      return send(
+        academyPath(
+          academyId,
+          "/attendance-records/" + attendanceRecordId + "/restore"
+        ),
+        "POST",
+        payload
+      );
+    },
+  };
+
+  // 기간 기반 집계(조회 전용). query 는 { date_from, date_to, group_by ... }
+  var analytics = {
+    dashboard: function (academyId, query) {
+      return apiRequest(
+        academyPath(academyId, "/analytics/dashboard") + toQuery(query)
+      );
+    },
+    registrations: function (academyId, query) {
+      return apiRequest(
+        academyPath(academyId, "/analytics/registrations") + toQuery(query)
+      );
+    },
+    attendance: function (academyId, query) {
+      return apiRequest(
+        academyPath(academyId, "/analytics/attendance") + toQuery(query)
+      );
+    },
+    passTypes: function (academyId, query) {
+      return apiRequest(
+        academyPath(academyId, "/analytics/pass-types") + toQuery(query)
+      );
+    },
+  };
+
+  // 운영 관리 대상 목록(조회 전용).
+  var worklists = {
+    pendingAttendance: function (academyId, query) {
+      return apiRequest(
+        academyPath(academyId, "/worklists/pending-attendance") + toQuery(query)
+      );
+    },
+    expiringPasses: function (academyId, query) {
+      return apiRequest(
+        academyPath(academyId, "/worklists/expiring-passes") + toQuery(query)
+      );
+    },
+    lowBalancePasses: function (academyId, query) {
+      return apiRequest(
+        academyPath(academyId, "/worklists/low-balance-passes") + toQuery(query)
+      );
+    },
+    reregistrationCandidates: function (academyId, query) {
+      return apiRequest(
+        academyPath(academyId, "/worklists/reregistration-candidates") +
+          toQuery(query)
+      );
+    },
+  };
+
+  // 장부 점검(조회 전용, 자동 수정 없음).
+  var checks = {
+    ledgerConsistency: function (academyId) {
+      return apiRequest(academyPath(academyId, "/checks/ledger-consistency"));
     },
   };
 
@@ -125,14 +351,24 @@
     ping: function () {
       return apiRequest("/ping");
     },
+    // 서버 + 데이터베이스 상태 확인
+    check: function () {
+      return apiRequest("/api/health");
+    },
   };
 
   global.CourseApi = {
     baseUrl: API_BASE_URL,
     messageFromError: messageFromError,
+    codeFromError: codeFromError,
     academies: academies,
     passTypes: passTypes,
     students: students,
+    studentPasses: studentPasses,
+    attendanceRecords: attendanceRecords,
+    analytics: analytics,
+    worklists: worklists,
+    checks: checks,
     health: health,
   };
 })(window);

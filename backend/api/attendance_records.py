@@ -40,6 +40,7 @@ def _iso(value: datetime | None) -> str | None:
 @router.get(
     "",
     response_model=Page[AttendanceRecordResponse],
+    operation_id="list_attendance_records",
     summary="수강 기록 목록 조회",
 )
 def list_attendance_records(
@@ -83,6 +84,7 @@ def list_attendance_records(
     "",
     response_model=AttendanceRecordResponse,
     status_code=201,
+    operation_id="create_attendance_reservation",
     summary="예약 생성",
     description="예약 생성 시 횟수는 차감하지 않습니다.",
 )
@@ -99,6 +101,7 @@ def create_attendance_record(
 @router.get(
     "/{attendance_record_id}",
     response_model=AttendanceRecordResponse,
+    operation_id="get_attendance_record",
     summary="수강 기록 상세 조회",
 )
 def get_attendance_record(
@@ -114,6 +117,7 @@ def get_attendance_record(
 @router.patch(
     "/{attendance_record_id}",
     response_model=AttendanceRecordResponse,
+    operation_id="update_attendance_record",
     summary="예약 내용 수정",
 )
 def update_attendance_record(
@@ -131,6 +135,7 @@ def update_attendance_record(
 @router.post(
     "/{attendance_record_id}/complete",
     response_model=AttendanceRecordResponse,
+    operation_id="complete_attendance",
     summary="수강 완료 처리",
     description="잔여 횟수 차감과 완료 처리를 한 트랜잭션으로 처리합니다.",
 )
@@ -149,6 +154,7 @@ def complete_attendance(
 @router.post(
     "/{attendance_record_id}/cancel",
     response_model=AttendanceRecordResponse,
+    operation_id="cancel_attendance",
     summary="예약 취소",
 )
 def cancel_attendance(
@@ -167,6 +173,7 @@ def cancel_attendance(
 @router.post(
     "/{attendance_record_id}/restore",
     response_model=AttendanceRecordResponse,
+    operation_id="restore_attendance",
     summary="완료된 수강 취소 및 횟수 복구",
     description=(
         "현재 스키마는 append-only 감사 이력이 아니며 기존 기록을 "
