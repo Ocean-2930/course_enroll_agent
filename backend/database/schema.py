@@ -3,7 +3,7 @@
 import sqlite3
 
 
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4
 
 TABLE_STATEMENTS = (
     """
@@ -32,6 +32,7 @@ TABLE_STATEMENTS = (
         total_sessions INTEGER NOT NULL CHECK (total_sessions > 0),
         validity_days INTEGER NOT NULL CHECK (validity_days > 0),
         price INTEGER NOT NULL DEFAULT 0 CHECK (price >= 0),
+        sort_index INTEGER NOT NULL DEFAULT 0,
         created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
         updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY (academy_id) REFERENCES academies(id)
@@ -120,6 +121,10 @@ TABLE_STATEMENTS = (
 )
 
 INDEX_STATEMENTS = (
+    """
+    CREATE INDEX IF NOT EXISTS idx_pass_types_academy_sort
+    ON pass_types (academy_id, sort_index)
+    """,
     """
     CREATE INDEX IF NOT EXISTS idx_students_academy_name
     ON students (academy_id, name)

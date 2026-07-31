@@ -31,6 +31,7 @@ PASS_TYPE_SORT_FIELDS = {
     "price": "price",
     "total_sessions": "total_sessions",
     "validity_days": "validity_days",
+    "sort_index": "sort_index",
     "created_at": "created_at",
 }
 STUDENT_SORT_FIELDS = {
@@ -553,14 +554,22 @@ def create_pass_type(
     connection = _connect()
     try:
         _get_academy_row(connection, academy_id)
+        # 새 수강권은 해당 아카데미 목록의 맨 뒤 순서로 배치한다.
+        next_index = connection.execute(
+            """
+            SELECT COALESCE(MAX(sort_index), -1) + 1
+            FROM pass_types WHERE academy_id = ?
+            """,
+            (academy_id,),
+        ).fetchone()[0]
         try:
             with connection:
                 cursor = connection.execute(
                     """
                     INSERT INTO pass_types (
                         academy_id, name, description,
-                        total_sessions, validity_days, price
-                    ) VALUES (?, ?, ?, ?, ?, ?)
+                        total_sessions, validity_days, price, sort_index
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         academy_id,
@@ -569,6 +578,7 @@ def create_pass_type(
                         data["total_sessions"],
                         data["validity_days"],
                         data.get("price", 0),
+                        next_index,
                     ),
                 )
         except sqlite3.IntegrityError as error:
@@ -612,6 +622,7 @@ def update_pass_type(
             "total_sessions",
             "validity_days",
             "price",
+            "sort_index",
         },
     )
     connection = _connect()

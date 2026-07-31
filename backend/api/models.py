@@ -95,12 +95,14 @@ class PassTypeUpdate(ApiModel):
     total_sessions: int | None = Field(default=None, gt=0)
     validity_days: int | None = Field(default=None, gt=0)
     price: int | None = Field(default=None, ge=0)
+    sort_index: int | None = Field(default=None, ge=0)
 
     @field_validator(
         "name",
         "total_sessions",
         "validity_days",
         "price",
+        "sort_index",
     )
     @classmethod
     def reject_null_required_fields(cls, value):
@@ -117,6 +119,7 @@ class PassTypeResponse(ApiModel):
     total_sessions: int
     validity_days: int
     price: int
+    sort_index: int
     created_at: datetime
     updated_at: datetime
 

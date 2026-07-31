@@ -309,7 +309,7 @@ class DatabaseSchemaTest(unittest.TestCase):
                 connection.close()
 
             self.assertEqual(academy_count, 0)
-            self.assertEqual(schema_version, "3")
+            self.assertEqual(schema_version, "4")
             for sidecar_path in sidecar_paths:
                 self.assertFalse(sidecar_path.exists())
         finally:

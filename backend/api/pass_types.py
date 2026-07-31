@@ -38,8 +38,9 @@ def list_pass_types(
         "price",
         "total_sessions",
         "validity_days",
+        "sort_index",
         "created_at",
-    ] = "id",
+    ] = "sort_index",
     order: Order = "asc",
 ) -> dict:
     return db_connector.list_pass_types(

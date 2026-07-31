@@ -79,16 +79,20 @@
 
       <!-- 3단계: 역할별 화면 (사업자는 수강권 관리 + 채팅) -->
       <div class="view" id="chatView" hidden>
-        <!-- 사업자 전용: 수강권 정보 관리 (항상 채팅 위) -->
-        <section class="pass-panel" id="passPanel" hidden aria-label="수강권 정보 관리">
-          <div class="pass-panel__head">
-            <h3 class="pass-panel__title">수강권 정보 관리</h3>
-            <button type="button" class="pass-add-btn" id="addPassBtn" aria-label="수강권 종류 추가">+</button>
-          </div>
-          <div class="pass-scroll" id="passScroll"></div>
-        </section>
+        <!-- 관리 섹션은 위에 고정되고, 남는 높이를 채팅창이 모두 차지한다.
+             채팅 내역은 채팅창 안에서만 세로 스크롤된다. -->
+        <div class="agent-scroll">
+          <!-- 사업자 전용: 수강권 정보 관리 (항상 채팅 위) -->
+          <section class="pass-panel" id="passPanel" hidden aria-label="수강권 정보 관리">
+            <div class="pass-panel__head">
+              <h3 class="pass-panel__title">수강권 정보 관리</h3>
+              <button type="button" class="pass-add-btn" id="addPassBtn" aria-label="수강권 종류 추가">+</button>
+            </div>
+            <div class="pass-scroll" id="passScroll"></div>
+          </section>
 
-        <div class="card__body" id="messages" aria-live="polite"></div>
+          <div class="card__body" id="messages" aria-live="polite"></div>
+        </div>
 
         <footer class="card__footer">
           <form class="chat-form" id="chatForm">
@@ -166,6 +170,7 @@
       el.className = "message message--" + from;
       el.textContent = text; // 사용자 입력은 textContent로만 렌더링
       messagesEl.appendChild(el);
+      // 채팅창이 자체 스크롤을 가지므로 채팅창을 맨 아래로 내린다.
       messagesEl.scrollTop = messagesEl.scrollHeight;
     }
 
@@ -283,10 +288,88 @@
       return n.toLocaleString("ko-KR") + "원";
     }
 
+    // 순서 변경 상태 잠금
+    let reordering = false;
+
+    // 현재 화면의 실제 카드 목록(입력 카드 제외)
+    function realCards() {
+      return Array.from(
+        passScroll.querySelectorAll(".pass-card:not(.pass-card--form)")
+      );
+    }
+
+    // 첫/마지막 카드의 이동 버튼을 비활성화한다.
+    function updateMoveButtons() {
+      const cards = realCards();
+      cards.forEach((card, idx) => {
+        const left = card.querySelector('[data-role="move-left"]');
+        const right = card.querySelector('[data-role="move-right"]');
+        if (left) left.disabled = reordering || idx === 0;
+        if (right) right.disabled = reordering || idx === cards.length - 1;
+      });
+    }
+
+    // 이웃 카드와 순서(sort_index)를 맞바꾸고 서버에 반영한다.
+    async function movePass(card, dir) {
+      if (reordering) return;
+      const cards = realCards();
+      const i = cards.indexOf(card);
+      const j = dir === "left" ? i - 1 : i + 1;
+      if (i < 0 || j < 0 || j >= cards.length) return;
+
+      const other = cards[j];
+      const a = card._passType;
+      const b = other._passType;
+
+      reordering = true;
+      updateMoveButtons();
+      try {
+        await CourseApi.passTypes.update(selected.academy.id, a.id, {
+          sort_index: b.sort_index,
+        });
+        await CourseApi.passTypes.update(selected.academy.id, b.id, {
+          sort_index: a.sort_index,
+        });
+        const tmp = a.sort_index;
+        a.sort_index = b.sort_index;
+        b.sort_index = tmp;
+        // DOM 순서도 교체
+        if (dir === "left") passScroll.insertBefore(card, other);
+        else passScroll.insertBefore(other, card);
+        card.scrollIntoView({ block: "nearest", inline: "nearest" });
+      } catch (err) {
+        window.alert(CourseApi.messageFromError(err));
+      } finally {
+        reordering = false;
+        updateMoveButtons();
+      }
+    }
+
     // 수강권 종류 카드 하나를 만든다(모든 값은 textContent로 안전하게).
     function buildPassCard(passType) {
       const card = document.createElement("div");
       card.className = "pass-card";
+      card._passType = passType; // 순서 변경 시 참조
+
+      // 순서 변경 (◀ ▶)
+      const move = document.createElement("div");
+      move.className = "pass-card__move";
+      const moveLeft = document.createElement("button");
+      moveLeft.type = "button";
+      moveLeft.className = "pass-move-btn";
+      moveLeft.dataset.role = "move-left";
+      moveLeft.setAttribute("aria-label", "왼쪽으로 이동");
+      moveLeft.textContent = "◀";
+      const moveRight = document.createElement("button");
+      moveRight.type = "button";
+      moveRight.className = "pass-move-btn";
+      moveRight.dataset.role = "move-right";
+      moveRight.setAttribute("aria-label", "오른쪽으로 이동");
+      moveRight.textContent = "▶";
+      move.append(moveLeft, moveRight);
+      moveLeft.addEventListener("click", () => movePass(card, "left"));
+      moveRight.addEventListener("click", () => movePass(card, "right"));
+      card.appendChild(move);
 
       const name = document.createElement("div");
       name.className = "pass-card__name";
@@ -355,8 +438,10 @@
         try {
           await CourseApi.passTypes.remove(selected.academy.id, passType.id);
           card.remove();
-          if (!passScroll.children.length) {
+          if (!realCards().length) {
             renderPassScrollMessage("등록된 수강권 종류가 없어요. 오른쪽 + 로 추가하세요.");
+          } else {
+            updateMoveButtons();
           }
         } catch (err) {
           editBtn.disabled = false;
@@ -380,10 +465,11 @@
     async function loadPassTypes(academyId) {
       renderPassScrollMessage("수강권 종류를 불러오는 중…");
       try {
+        // 표시 순서는 sort_index(순서 index)를 따른다.
         const page = await CourseApi.passTypes.list(academyId, {
           limit: 100,
-          sort: "created_at",
-          order: "desc",
+          sort: "sort_index",
+          order: "asc",
         });
         const items = page.items || [];
         passScroll.textContent = "";
@@ -394,6 +480,7 @@
         for (const item of items) {
           passScroll.appendChild(buildPassCard(item));
         }
+        updateMoveButtons();
       } catch (err) {
         renderPassScrollMessage(CourseApi.messageFromError(err));
       }
@@ -504,8 +591,12 @@
         submitLabel: "저장",
         onSubmit: (payload) =>
           CourseApi.passTypes.create(selected.academy.id, payload),
-        onDone: (created) =>
-          passScroll.replaceChild(buildPassCard(created), formCard),
+        onDone: (created) => {
+          // 새 항목은 순서상 맨 뒤(sort_index 최대)이므로 끝에 배치
+          formCard.remove();
+          passScroll.appendChild(buildPassCard(created));
+          updateMoveButtons();
+        },
         onCancel: () => {
           formCard.remove();
           if (!passScroll.children.length) {

@@ -536,9 +536,19 @@ select.input:disabled {
   color: var(--color-muted);
 }
 
+/* 관리 섹션 + 채팅을 담는 영역.
+   자기 자신은 스크롤하지 않고, 남는 높이를 채팅창(.card__body)에 넘긴다. */
+.agent-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
 /* ===== 사업자: 수강권 정보 관리 (채팅 위쪽) ===== */
 .pass-panel {
-  flex-shrink: 0;
+  flex: 0 0 auto;
   padding: 14px 16px 12px;
   border-bottom: 1px solid var(--color-border);
   background: #fbfaff;
@@ -614,6 +624,41 @@ select.input:disabled {
   border: 1px solid var(--color-border);
   border-radius: 12px;
   background: var(--color-surface);
+}
+
+/* 순서 변경 버튼 행 */
+.pass-card__move {
+  display: flex;
+  justify-content: space-between;
+  gap: 6px;
+}
+
+.pass-move-btn {
+  flex: 1;
+  padding: 3px 0;
+  border: 1px solid var(--color-border);
+  border-radius: 7px;
+  background: var(--color-bg);
+  color: var(--color-muted);
+  font-size: 12px;
+  line-height: 1;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.pass-move-btn:hover:not(:disabled) {
+  background: var(--color-brand-soft);
+  color: var(--color-brand);
+}
+
+.pass-move-btn:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+.pass-move-btn:focus-visible {
+  outline: 2px solid var(--color-brand);
+  outline-offset: 2px;
 }
 
 .pass-card__name {
@@ -712,10 +757,13 @@ select.input:disabled {
 
 .pass-card__error[hidden] { display: none; }
 
-/* 채팅 메시지 영역 */
+/* 채팅 메시지 영역: 높이는 남는 공간으로 고정되고, 내역이 쌓이면 안에서 스크롤된다. */
 .card__body {
-  flex: 1;
+  flex: 1 1 auto;
+  min-height: 0;
   overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
   padding: 18px;
   display: flex;
   flex-direction: column;
@@ -815,5 +863,6 @@ select.input:disabled {
   .page { padding: 24px 16px 96px; }
   .home { padding: 36px 16px; }
   .agent-wrap { padding: 20px 16px 48px; }
-  .card { height: auto; min-height: 560px; }
+  /* 채팅창 내부 스크롤이 동작하려면 카드 높이가 확정돼야 한다(auto 금지). */
+  .card { height: calc(100vh - 150px); min-height: 480px; }
 }
