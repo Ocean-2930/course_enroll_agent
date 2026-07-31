@@ -48,10 +48,42 @@
     return "요청에 실패했어요. (HTTP " + err.status + ")";
   }
 
+  // 객체를 안전한 쿼리스트링으로 변환한다(빈 값은 생략).
+  function toQuery(params) {
+    if (!params) return "";
+    var parts = [];
+    Object.keys(params).forEach(function (key) {
+      var value = params[key];
+      if (value === undefined || value === null || value === "") return;
+      parts.push(encodeURIComponent(key) + "=" + encodeURIComponent(value));
+    });
+    return parts.length ? "?" + parts.join("&") : "";
+  }
+
   var academies = {
+    // 아카데미 목록 조회 → { items, pagination }
+    list: function (params) {
+      return apiRequest("/api/academies" + toQuery(params));
+    },
     // 아카데미 생성 → 생성된 아카데미 객체 반환
     create: function (payload) {
       return apiRequest("/api/academies", {
+        method: "POST",
+        body: JSON.stringify(payload),
+      });
+    },
+  };
+
+  var students = {
+    // 특정 아카데미의 수강생 목록 조회 → { items, pagination }
+    list: function (academyId, params) {
+      return apiRequest(
+        "/api/academies/" + academyId + "/students" + toQuery(params)
+      );
+    },
+    // 수강생 생성 → 생성된 수강생 객체 반환
+    create: function (academyId, payload) {
+      return apiRequest("/api/academies/" + academyId + "/students", {
         method: "POST",
         body: JSON.stringify(payload),
       });
@@ -69,6 +101,7 @@
     baseUrl: API_BASE_URL,
     messageFromError: messageFromError,
     academies: academies,
+    students: students,
     health: health,
   };
 })(window);

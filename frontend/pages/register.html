@@ -71,6 +71,87 @@
         <div class="form-status" id="academyStatus" role="status" aria-live="polite" hidden></div>
       </form>
     </section>
+
+    <section class="panel">
+      <h3 class="panel__title">수강생 계정 생성</h3>
+      <p class="panel__desc">수강생을 등록할 아카데미를 고른 뒤 수강생 정보를 입력하세요.</p>
+
+      <form id="studentForm" novalidate>
+        <div class="field">
+          <label class="field__label" for="studentAcademy">
+            아카데미 <span class="field__req" aria-hidden="true">*</span>
+          </label>
+          <select class="input" id="studentAcademy" name="academy_id" required>
+            <option value="">아카데미를 불러오는 중…</option>
+          </select>
+          <p class="field__hint" id="studentAcademyHint">수강생은 선택한 아카데미에 소속됩니다.</p>
+          <p class="field__error" id="studentAcademyError" hidden></p>
+        </div>
+
+        <div class="field">
+          <label class="field__label" for="studentName">
+            이름 <span class="field__req" aria-hidden="true">*</span>
+          </label>
+          <input
+            class="input"
+            type="text"
+            id="studentName"
+            name="name"
+            maxlength="200"
+            placeholder="예: 홍길동"
+            autocomplete="name"
+            required
+          />
+          <p class="field__error" id="studentNameError" hidden></p>
+        </div>
+
+        <div class="field">
+          <label class="field__label" for="studentPhone">전화번호</label>
+          <input
+            class="input"
+            type="tel"
+            id="studentPhone"
+            name="phone"
+            maxlength="50"
+            placeholder="예: 010-1234-5678"
+            autocomplete="tel"
+          />
+          <p class="field__hint">선택 입력입니다.</p>
+        </div>
+
+        <div class="field">
+          <label class="field__label" for="studentEmail">이메일</label>
+          <input
+            class="input"
+            type="email"
+            id="studentEmail"
+            name="email"
+            maxlength="320"
+            placeholder="예: student@example.com"
+            autocomplete="email"
+          />
+          <p class="field__hint">선택 입력입니다.</p>
+        </div>
+
+        <div class="field">
+          <label class="field__label" for="studentMemo">메모</label>
+          <input
+            class="input"
+            type="text"
+            id="studentMemo"
+            name="memo"
+            placeholder="예: 주 2회 수강 희망"
+          />
+          <p class="field__hint">선택 입력입니다.</p>
+        </div>
+
+        <div class="form-actions">
+          <button type="submit" class="btn btn--primary" id="studentSubmit">수강생 생성</button>
+        </div>
+
+        <div class="form-status" id="studentStatus" role="status" aria-live="polite" hidden></div>
+      </form>
+    </section>
   </main>
 
   <script src="../assets/api.js"></script>
@@ -171,12 +252,219 @@
         const academy = await CourseApi.academies.create(payload);
         showAcademySuccess(academy);
         academyForm.reset();
+        addAcademyOption(academy, true); // 수강생 폼 드롭다운에 즉시 반영
       } catch (err) {
         showAcademyError(CourseApi.messageFromError(err));
       } finally {
         setSubmitting(false);
       }
     });
+
+    // =========================================================
+    // 수강생 계정 생성 폼
+    // =========================================================
+    const studentForm = document.getElementById("studentForm");
+    const studentAcademy = document.getElementById("studentAcademy");
+    const studentAcademyHint = document.getElementById("studentAcademyHint");
+    const studentAcademyError = document.getElementById("studentAcademyError");
+    const studentName = document.getElementById("studentName");
+    const studentNameError = document.getElementById("studentNameError");
+    const studentPhone = document.getElementById("studentPhone");
+    const studentEmail = document.getElementById("studentEmail");
+    const studentMemo = document.getElementById("studentMemo");
+    const studentSubmit = document.getElementById("studentSubmit");
+    const studentStatus = document.getElementById("studentStatus");
+
+    let hasAcademies = false;
+
+    function setFieldError(errorEl, inputEl, msg) {
+      if (msg) {
+        errorEl.textContent = msg;
+        errorEl.hidden = false;
+        inputEl.setAttribute("aria-invalid", "true");
+      } else {
+        errorEl.hidden = true;
+        inputEl.removeAttribute("aria-invalid");
+      }
+    }
+
+    // 드롭다운을 아카데미 목록으로 채운다.
+    function fillAcademyOptions(items) {
+      studentAcademy.textContent = "";
+      const placeholder = document.createElement("option");
+      placeholder.value = "";
+      if (items.length) {
+        placeholder.textContent = "아카데미를 선택하세요";
+      } else {
+        placeholder.textContent = "등록된 아카데미가 없습니다";
+      }
+      studentAcademy.appendChild(placeholder);
+
+      for (const academy of items) {
+        const opt = document.createElement("option");
+        opt.value = String(academy.id);
+        opt.textContent = academy.name; // textContent 로 안전하게
+        studentAcademy.appendChild(opt);
+      }
+
+      hasAcademies = items.length > 0;
+      studentAcademy.disabled = false;
+      studentSubmit.disabled = !hasAcademies;
+      studentAcademyHint.textContent = hasAcademies
+        ? "수강생은 선택한 아카데미에 소속됩니다."
+        : "먼저 위에서 아카데미를 생성해 주세요.";
+    }
+
+    // 아카데미 생성 시 드롭다운 맨 앞(플레이스홀더 다음)에 추가하고 선택
+    function addAcademyOption(academy, select) {
+      const opt = document.createElement("option");
+      opt.value = String(academy.id);
+      opt.textContent = academy.name;
+      // 첫 번째(플레이스홀더) 다음 위치에 삽입
+      const anchor = studentAcademy.options[0]
+        ? studentAcademy.options[0].nextSibling
+        : null;
+      studentAcademy.insertBefore(opt, anchor);
+
+      hasAcademies = true;
+      studentAcademy.disabled = false;
+      studentSubmit.disabled = false;
+      studentAcademyHint.textContent = "수강생은 선택한 아카데미에 소속됩니다.";
+      studentAcademy.options[0].textContent = "아카데미를 선택하세요";
+      if (select) {
+        studentAcademy.value = opt.value;
+        setFieldError(studentAcademyError, studentAcademy, "");
+      }
+    }
+
+    // 페이지 진입 시 아카데미 목록 로드
+    async function loadAcademies() {
+      studentAcademy.disabled = true;
+      studentSubmit.disabled = true;
+      studentAcademy.textContent = "";
+      const loading = document.createElement("option");
+      loading.value = "";
+      loading.textContent = "아카데미를 불러오는 중…";
+      studentAcademy.appendChild(loading);
+
+      try {
+        const page = await CourseApi.academies.list({ limit: 100, sort: "name" });
+        fillAcademyOptions(page.items || []);
+      } catch (err) {
+        studentAcademy.textContent = "";
+        const failed = document.createElement("option");
+        failed.value = "";
+        failed.textContent = "목록을 불러오지 못했습니다";
+        studentAcademy.appendChild(failed);
+        studentAcademyHint.textContent =
+          CourseApi.messageFromError(err) + " 새로고침 후 다시 시도해 주세요.";
+      }
+    }
+
+    function showStudentSuccess(student) {
+      studentStatus.className = "form-status form-status--success";
+      studentStatus.textContent = "";
+      const title = document.createElement("div");
+      title.className = "form-status__title";
+      title.textContent = "수강생 계정이 생성되었습니다.";
+      const dl = document.createElement("dl");
+      const rows = [
+        ["ID", String(student.id)],
+        ["이름", student.name],
+        ["전화번호", student.phone || "-"],
+        ["이메일", student.email || "-"],
+        ["소속 아카데미 ID", String(student.academy_id)],
+      ];
+      for (const [key, value] of rows) {
+        const dt = document.createElement("dt");
+        dt.textContent = key;
+        const dd = document.createElement("dd");
+        dd.textContent = value;
+        dl.append(dt, dd);
+      }
+      studentStatus.append(title, dl);
+      studentStatus.hidden = false;
+    }
+
+    function showStudentError(message) {
+      studentStatus.className = "form-status form-status--error";
+      studentStatus.textContent = "";
+      const title = document.createElement("div");
+      title.className = "form-status__title";
+      title.textContent = "생성에 실패했습니다.";
+      const body = document.createElement("div");
+      body.textContent = message;
+      studentStatus.append(title, body);
+      studentStatus.hidden = false;
+    }
+
+    studentAcademy.addEventListener("change", () => {
+      if (studentAcademy.value) setFieldError(studentAcademyError, studentAcademy, "");
+    });
+    studentName.addEventListener("input", () => {
+      if (studentName.value.trim()) setFieldError(studentNameError, studentName, "");
+    });
+
+    function setStudentSubmitting(on) {
+      studentSubmit.disabled = on;
+      studentSubmit.textContent = "";
+      if (on) {
+        const sp = document.createElement("span");
+        sp.className = "spinner";
+        studentSubmit.append(sp, document.createTextNode("생성 중…"));
+      } else {
+        studentSubmit.textContent = "수강생 생성";
+      }
+    }
+
+    studentForm.addEventListener("submit", async (e) => {
+      e.preventDefault();
+
+      const academyId = studentAcademy.value;
+      const name = studentName.value.trim();
+      let invalid = false;
+
+      if (!academyId) {
+        setFieldError(studentAcademyError, studentAcademy, "아카데미를 선택해 주세요.");
+        invalid = true;
+      }
+      if (!name) {
+        setFieldError(studentNameError, studentName, "수강생 이름을 입력해 주세요.");
+        invalid = true;
+      }
+      if (invalid) {
+        (!academyId ? studentAcademy : studentName).focus();
+        return;
+      }
+
+      studentStatus.hidden = true;
+
+      // 백엔드가 허용하는 필드만 전송(빈 선택값은 생략)
+      const payload = { name };
+      const phone = studentPhone.value.trim();
+      const email = studentEmail.value.trim();
+      const memo = studentMemo.value.trim();
+      if (phone) payload.phone = phone;
+      if (email) payload.email = email;
+      if (memo) payload.memo = memo;
+
+      setStudentSubmitting(true);
+      try {
+        const student = await CourseApi.students.create(Number(academyId), payload);
+        showStudentSuccess(student);
+        // 아카데미 선택은 유지하고 나머지 입력만 초기화
+        studentName.value = "";
+        studentPhone.value = "";
+        studentEmail.value = "";
+        studentMemo.value = "";
+      } catch (err) {
+        showStudentError(CourseApi.messageFromError(err));
+      } finally {
+        setStudentSubmitting(false);
+      }
+    });
+
+    loadAcademies();
   </script>
 </body>
 </html>

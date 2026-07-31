@@ -173,6 +173,37 @@ body {
 
 .field__error[hidden] { display: none; }
 
+/* select 도 .input 스타일을 공유하되 화살표 여백을 확보 */
+select.input {
+  appearance: none;
+  -webkit-appearance: none;
+  padding-right: 36px;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'><path d='M1 1l5 5 5-5' fill='none' stroke='%236b6880' stroke-width='1.6' stroke-linecap='round'/></svg>");
+  background-repeat: no-repeat;
+  background-position: right 13px center;
+}
+
+select.input:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+/* 섹션 구분선 */
+.panel + .panel { margin-top: 20px; }
+
+.panel__title {
+  margin: 0 0 4px;
+  font-size: 16px;
+  font-weight: 700;
+}
+
+.panel__desc {
+  margin: 0 0 20px;
+  font-size: 13.5px;
+  line-height: 1.5;
+  color: var(--color-muted);
+}
+
 .form-actions {
   display: flex;
   align-items: center;
@@ -423,6 +454,20 @@ body {
   padding: 28px 24px;
   gap: 18px;
   overflow-y: auto;
+}
+
+/* 계정 선택 화면 */
+.account-view {
+  padding: 26px 24px;
+  gap: 2px;
+  overflow-y: auto;
+}
+
+.account-view__lead {
+  margin: 2px 2px 20px;
+  color: var(--color-muted);
+  font-size: 15px;
+  line-height: 1.5;
 }
 
 .role-view__lead {

@@ -46,7 +46,38 @@
         </div>
       </div>
 
-      <!-- 2단계: 역할별 채팅 -->
+      <!-- 2단계: 계정 선택 -->
+      <div class="view account-view" id="accountView" hidden>
+        <p class="account-view__lead" id="accountLead"></p>
+
+        <div class="field">
+          <label class="field__label" for="academySelect">
+            아카데미 <span class="field__req" aria-hidden="true">*</span>
+          </label>
+          <select class="input" id="academySelect">
+            <option value="">아카데미를 불러오는 중…</option>
+          </select>
+          <p class="field__hint" id="academyHint">진입할 아카데미를 선택하세요.</p>
+        </div>
+
+        <div class="field" id="studentField" hidden>
+          <label class="field__label" for="studentSelect">
+            수강생 계정 <span class="field__req" aria-hidden="true">*</span>
+          </label>
+          <select class="input" id="studentSelect" disabled>
+            <option value="">아카데미를 먼저 선택하세요</option>
+          </select>
+          <p class="field__hint" id="studentHint">선택한 아카데미의 수강생 계정으로 진입합니다.</p>
+        </div>
+
+        <div class="form-status" id="accountStatus" role="status" aria-live="polite" hidden></div>
+
+        <div class="form-actions">
+          <button type="button" class="btn btn--primary" id="enterBtn" disabled>시작하기</button>
+        </div>
+      </div>
+
+      <!-- 3단계: 역할별 채팅 -->
       <div class="view" id="chatView" hidden>
         <div class="card__body" id="messages" aria-live="polite"></div>
 
@@ -67,6 +98,7 @@
     </section>
   </main>
 
+  <script src="../assets/api.js"></script>
   <script>
     const messagesEl = document.getElementById("messages");
     const form = document.getElementById("chatForm");
@@ -74,72 +106,249 @@
     const sendBtn = document.getElementById("sendBtn");
     const backBtn = document.getElementById("backBtn");
     const roleView = document.getElementById("roleView");
+    const accountView = document.getElementById("accountView");
     const chatView = document.getElementById("chatView");
     const headerBadge = document.getElementById("headerBadge");
     const headerTitle = document.getElementById("headerTitle");
     const roleButtons = document.querySelectorAll(".role-card");
+
+    const accountLead = document.getElementById("accountLead");
+    const academySelect = document.getElementById("academySelect");
+    const academyHint = document.getElementById("academyHint");
+    const studentField = document.getElementById("studentField");
+    const studentSelect = document.getElementById("studentSelect");
+    const studentHint = document.getElementById("studentHint");
+    const accountStatus = document.getElementById("accountStatus");
+    const enterBtn = document.getElementById("enterBtn");
 
     // 역할별 화면 구성 (자영업자 / 회원)
     const ROLES = {
       owner: {
         badge: "🏫",
         title: "수강권 관리 · 사업자",
-        greeting: "사업자 모드예요. 수강권 상품 등록, 회원 발급·차감, 매출 현황 중 무엇을 도와드릴까요?",
+        needsStudent: false,
+        accountLead: "관리할 아카데미를 선택하세요.",
         placeholder: "예: 10회권 상품을 새로 만들어줘",
+        greeting: (ctx) =>
+          `사업자 모드예요. '${ctx.academyName}' 아카데미를 기준으로 수강권 상품 등록, 회원 발급·차감, 매출 현황 중 무엇을 도와드릴까요?`,
       },
       member: {
         badge: "🙋",
         title: "수강권 관리 · 회원",
-        greeting: "회원 모드예요. 내 수강권 잔여 횟수, 만료일, 사용 내역 중 무엇이 궁금하세요?",
+        needsStudent: true,
+        accountLead: "아카데미와 본인 수강생 계정을 선택하세요.",
         placeholder: "예: 내 수강권 몇 회 남았는지 알려줘",
+        greeting: (ctx) =>
+          `회원 모드예요. '${ctx.academyName}'의 '${ctx.studentName}' 님, 내 수강권 잔여 횟수·만료일·사용 내역 중 무엇이 궁금하세요?`,
       },
     };
 
-    // 사용자 입력은 textContent로만 넣어 안전하게 렌더링
+    // 현재 진행 상태
+    let currentRole = null;
+    const selected = { academy: null, student: null };
+
+    // ---------- 공통 유틸 ----------
     function addMessage(text, from) {
       const el = document.createElement("div");
       el.className = "message message--" + from;
-      el.textContent = text;
+      el.textContent = text; // 사용자 입력은 textContent로만 렌더링
       messagesEl.appendChild(el);
       messagesEl.scrollTop = messagesEl.scrollHeight;
     }
 
-    // 입력값 유무에 따라 보내기 버튼 활성화 + 높이 자동 조절
     function syncInput() {
       sendBtn.disabled = input.value.trim().length === 0;
       input.style.height = "auto";
       input.style.height = Math.min(input.scrollHeight, 96) + "px";
     }
 
-    // 역할 선택 → 채팅 화면으로 전환
-    function selectRole(roleKey) {
+    function setAccountStatus(kind, message) {
+      if (!kind) {
+        accountStatus.hidden = true;
+        return;
+      }
+      accountStatus.className = "form-status form-status--" + kind;
+      accountStatus.textContent = message;
+      accountStatus.hidden = false;
+    }
+
+    // select 를 한 개의 안내 옵션으로 채운다.
+    function setSelectPlaceholder(select, text) {
+      select.textContent = "";
+      const opt = document.createElement("option");
+      opt.value = "";
+      opt.textContent = text;
+      select.appendChild(opt);
+    }
+
+    // select 를 { id, name } 목록으로 채운다.
+    function fillSelect(select, items, placeholder, emptyText) {
+      select.textContent = "";
+      const head = document.createElement("option");
+      head.value = "";
+      head.textContent = items.length ? placeholder : emptyText;
+      select.appendChild(head);
+      for (const item of items) {
+        const opt = document.createElement("option");
+        opt.value = String(item.id);
+        opt.textContent = item.name;
+        select.appendChild(opt);
+      }
+    }
+
+    function refreshEnterEnabled() {
+      const ok = currentRole &&
+        selected.academy &&
+        (!ROLES[currentRole].needsStudent || selected.student);
+      enterBtn.disabled = !ok;
+    }
+
+    // ---------- 단계 전환 ----------
+    function showRolePicker() {
+      chatView.hidden = true;
+      accountView.hidden = true;
+      roleView.hidden = false;
+      backBtn.hidden = true;
+      headerBadge.textContent = "🎟️";
+      headerTitle.textContent = "수강권 관리 Agent";
+      currentRole = null;
+    }
+
+    function goToAccountStep(roleKey) {
       const role = ROLES[roleKey];
       if (!role) return;
+      currentRole = roleKey;
+      selected.academy = null;
+      selected.student = null;
+
       headerBadge.textContent = role.badge;
       headerTitle.textContent = role.title;
+      accountLead.textContent = role.accountLead;
+      studentField.hidden = !role.needsStudent;
+      setSelectPlaceholder(studentSelect, "아카데미를 먼저 선택하세요");
+      studentSelect.disabled = true;
+      setAccountStatus(null);
+      enterBtn.disabled = true;
+
+      roleView.hidden = true;
+      chatView.hidden = true;
+      accountView.hidden = false;
+      backBtn.hidden = false;
+
+      loadAcademies();
+    }
+
+    function enterChat() {
+      const role = ROLES[currentRole];
+      const ctx = {
+        academyName: selected.academy ? selected.academy.name : "",
+        studentName: selected.student ? selected.student.name : "",
+      };
       input.placeholder = role.placeholder;
       messagesEl.innerHTML = "";
-      addMessage(role.greeting, "bot");
-      roleView.hidden = true;
+      addMessage(role.greeting(ctx), "bot");
+
+      accountView.hidden = true;
       chatView.hidden = false;
-      backBtn.hidden = false;
       input.value = "";
       syncInput();
       input.focus();
     }
 
-    // 채팅 → 역할 선택 화면으로 복귀
-    function showRolePicker() {
-      chatView.hidden = true;
-      roleView.hidden = false;
-      backBtn.hidden = true;
-      headerBadge.textContent = "🎟️";
-      headerTitle.textContent = "수강권 관리 Agent";
+    // 뒤로가기: 채팅 → 계정 선택 → 역할 선택
+    function goBack() {
+      if (!chatView.hidden) {
+        chatView.hidden = true;
+        accountView.hidden = false;
+      } else if (!accountView.hidden) {
+        showRolePicker();
+      }
     }
 
-    input.addEventListener("input", syncInput);
+    // ---------- 데이터 로딩 ----------
+    async function loadAcademies() {
+      selected.academy = null;
+      refreshEnterEnabled();
+      academySelect.disabled = true;
+      setSelectPlaceholder(academySelect, "아카데미를 불러오는 중…");
+      academyHint.textContent = "진입할 아카데미를 선택하세요.";
 
-    // Enter 전송, Shift+Enter 줄바꿈
+      try {
+        const page = await CourseApi.academies.list({ limit: 100, sort: "name" });
+        const items = page.items || [];
+        fillSelect(academySelect, items, "아카데미를 선택하세요", "등록된 아카데미가 없습니다");
+        academySelect.disabled = false;
+        if (!items.length) {
+          academyHint.textContent = "먼저 '정보 등록'에서 아카데미를 만들어 주세요.";
+        }
+      } catch (err) {
+        setSelectPlaceholder(academySelect, "목록을 불러오지 못했습니다");
+        setAccountStatus("error", CourseApi.messageFromError(err));
+      }
+    }
+
+    async function loadStudents(academyId) {
+      selected.student = null;
+      refreshEnterEnabled();
+      studentSelect.disabled = true;
+      setSelectPlaceholder(studentSelect, "수강생을 불러오는 중…");
+      studentHint.textContent = "선택한 아카데미의 수강생 계정으로 진입합니다.";
+      setAccountStatus(null);
+
+      try {
+        // is_active 는 유효 수강권 보유 여부라, 계정 선택 단계에서는 전체를 보여준다.
+        const page = await CourseApi.students.list(academyId, {
+          limit: 100,
+          sort: "name",
+        });
+        const items = page.items || [];
+        fillSelect(studentSelect, items, "수강생을 선택하세요", "등록된 수강생이 없습니다");
+        studentSelect.disabled = !items.length;
+        if (!items.length) {
+          studentHint.textContent = "이 아카데미에는 수강생이 없어요. '정보 등록'에서 먼저 추가해 주세요.";
+        }
+      } catch (err) {
+        setSelectPlaceholder(studentSelect, "목록을 불러오지 못했습니다");
+        setAccountStatus("error", CourseApi.messageFromError(err));
+      }
+    }
+
+    // ---------- 이벤트 ----------
+    academySelect.addEventListener("change", () => {
+      const opt = academySelect.selectedOptions[0];
+      selected.academy = academySelect.value
+        ? { id: Number(academySelect.value), name: opt.textContent }
+        : null;
+      selected.student = null;
+
+      if (ROLES[currentRole] && ROLES[currentRole].needsStudent) {
+        if (selected.academy) {
+          loadStudents(selected.academy.id);
+        } else {
+          setSelectPlaceholder(studentSelect, "아카데미를 먼저 선택하세요");
+          studentSelect.disabled = true;
+        }
+      }
+      refreshEnterEnabled();
+    });
+
+    studentSelect.addEventListener("change", () => {
+      const opt = studentSelect.selectedOptions[0];
+      selected.student = studentSelect.value
+        ? { id: Number(studentSelect.value), name: opt.textContent }
+        : null;
+      refreshEnterEnabled();
+    });
+
+    enterBtn.addEventListener("click", enterChat);
+
+    roleButtons.forEach((btn) => {
+      btn.addEventListener("click", () => goToAccountStep(btn.dataset.role));
+    });
+
+    backBtn.addEventListener("click", goBack);
+
+    input.addEventListener("input", syncInput);
     input.addEventListener("keydown", (e) => {
       if (e.key === "Enter" && !e.shiftKey) {
         e.preventDefault();
@@ -157,12 +366,6 @@
       input.focus();
       // TODO: 백엔드 Agent API 연동 자리 (현재는 목 응답)
     });
-
-    roleButtons.forEach((btn) => {
-      btn.addEventListener("click", () => selectRole(btn.dataset.role));
-    });
-
-    backBtn.addEventListener("click", showRolePicker);
   </script>
 </body>
 </html>
