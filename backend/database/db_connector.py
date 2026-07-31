@@ -97,6 +97,13 @@ def _today() -> str:
     return date.today().isoformat()
 
 
+def _add_minutes(moment: str, minutes: int) -> str:
+    """ISO-8601 시각에 분을 더한다(예약 종료 시각 계산)."""
+    return (
+        datetime.fromisoformat(moment) + timedelta(minutes=minutes)
+    ).replace(microsecond=0).isoformat()
+
+
 def _as_iso(value: Any) -> Any:
     if isinstance(value, datetime):
         return value.replace(microsecond=0).isoformat()
@@ -568,8 +575,9 @@ def create_pass_type(
                     """
                     INSERT INTO pass_types (
                         academy_id, name, description,
-                        total_sessions, validity_days, price, sort_index
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                        total_sessions, validity_days, price,
+                        session_duration_minutes, sort_index
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         academy_id,
@@ -578,6 +586,7 @@ def create_pass_type(
                         data["total_sessions"],
                         data["validity_days"],
                         data.get("price", 0),
+                        data.get("session_duration_minutes", 60),
                         next_index,
                     ),
                 )
@@ -622,6 +631,7 @@ def update_pass_type(
             "total_sessions",
             "validity_days",
             "price",
+            "session_duration_minutes",
             "sort_index",
         },
     )
@@ -1047,10 +1057,11 @@ def issue_student_pass(
                     remaining_sessions,
                     validity_days_snapshot,
                     price_snapshot,
+                    session_duration_minutes_snapshot,
                     purchased_at,
                     started_at,
                     expire_date
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     student_id,
@@ -1061,6 +1072,7 @@ def issue_student_pass(
                     pass_type["total_sessions"],
                     pass_type["validity_days"],
                     pass_type["price"],
+                    pass_type["session_duration_minutes"],
                     purchased_at,
                     started_at,
                     expire_date,
@@ -1168,24 +1180,24 @@ def delete_student_pass(
     academy_id: int,
     student_id: int,
     student_pass_id: int,
-) -> None:
+) -> dict[str, Any]:
+    """보유 수강권을 물리 삭제하고 학생 만료일을 다시 계산한다.
+
+    잔여 횟수가 남아 있어도 삭제할 수 있다. 수강 기록은 지우지 않고
+    `attendance_records.student_pass_id` 만 NULL 이 되며(ON DELETE SET NULL),
+    이름·종류 스냅샷은 그대로 남는다. 삭제와 만료일 재계산은 하나의
+    트랜잭션으로 처리한다.
+    """
     connection = _connect()
     try:
-        row = _get_student_pass_row(
-            connection,
-            academy_id,
-            student_id,
-            student_pass_id,
-        )
-        if row["remaining_sessions"] > 0:
-            raise _error(
-                409,
-                "STUDENT_PASS_HAS_REMAINING_SESSIONS",
-                "남은 횟수가 있는 수강권은 삭제할 수 없습니다.",
-                student_pass_id=student_pass_id,
-                remaining_sessions=row["remaining_sessions"],
+        connection.execute("BEGIN IMMEDIATE")
+        try:
+            _get_student_pass_row(
+                connection,
+                academy_id,
+                student_id,
+                student_pass_id,
             )
-        with connection:
             connection.execute(
                 """
                 DELETE FROM student_passes
@@ -1193,6 +1205,33 @@ def delete_student_pass(
                 """,
                 (student_pass_id, student_id),
             )
+            # 남은 수강권 중 가장 늦은 만료일로 학생 만료일을 다시 맞춘다.
+            student_expire_date = connection.execute(
+                """
+                SELECT MAX(expire_date)
+                FROM student_passes
+                WHERE student_id = ?
+                """,
+                (student_id,),
+            ).fetchone()[0]
+            connection.execute(
+                """
+                UPDATE students
+                SET expire_date = ?, updated_at = CURRENT_TIMESTAMP
+                WHERE id = ?
+                """,
+                (student_expire_date, student_id),
+            )
+        except Exception:
+            connection.rollback()
+            raise
+        else:
+            connection.commit()
+        return {
+            "student_id": student_id,
+            "deleted_student_pass_id": student_pass_id,
+            "student_expire_date": student_expire_date,
+        }
     finally:
         connection.close()
 
@@ -1386,6 +1425,12 @@ def create_attendance_record(
                 student_pass_id=student_pass["id"],
                 expire_date=student_pass["expire_date"],
             )
+        # 종료 시각은 클라이언트가 보내지 않고 수강권 스냅샷 시간으로 계산한다.
+        # 이번 단계에서는 다른 예약과의 시간 겹침을 검사하지 않는다.
+        scheduled_end_at = _add_minutes(
+            data["scheduled_at"],
+            student_pass["session_duration_minutes_snapshot"],
+        )
         with connection:
             cursor = connection.execute(
                 """
@@ -1398,10 +1443,11 @@ def create_attendance_record(
                     student_name_snapshot,
                     class_name,
                     scheduled_at,
+                    scheduled_end_at,
                     status,
                     session_delta,
                     memo
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'RESERVED', 0, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'RESERVED', 0, ?)
                 """,
                 (
                     academy_id,
@@ -1412,6 +1458,7 @@ def create_attendance_record(
                     student["name"],
                     data["class_name"],
                     data["scheduled_at"],
+                    scheduled_end_at,
                     data.get("memo"),
                 ),
             )
@@ -1474,6 +1521,11 @@ def update_attendance_record(
                     student_pass_id=student_pass_id,
                     expire_date=student_pass["expire_date"],
                 )
+            # 시작 시각이 바뀌면 종료 시각도 서버가 다시 계산한다.
+            data["scheduled_end_at"] = _add_minutes(
+                data["scheduled_at"],
+                student_pass["session_duration_minutes_snapshot"],
+            )
         assignments = ", ".join(f"{field} = ?" for field in data)
         with connection:
             connection.execute(
@@ -1500,6 +1552,12 @@ def complete_attendance(
     attendance_record_id: int,
     completed_at: str | None,
 ) -> dict[str, Any]:
+    """사업자가 수강을 완료 처리한다(RESERVED·CHECKED_IN 모두 허용).
+
+    회원이 체크인한 기록이면 기존 `checked_in_at` 을 유지하고, 예약 상태에서
+    바로 완료하면 완료 시각을 체크인 시각으로도 기록한다. 스키마가 COMPLETED
+    에 두 시각을 모두 요구하기 때문이다.
+    """
     completion_time = completed_at or _now()
     connection = _connect()
     try:
@@ -1579,11 +1637,18 @@ def complete_attendance(
                 UPDATE attendance_records
                 SET status = 'COMPLETED',
                     session_delta = -1,
+                    checked_in_at = COALESCE(checked_in_at, ?),
+                    checked_out_at = ?,
                     completed_at = ?,
                     updated_at = CURRENT_TIMESTAMP
-                WHERE id = ? AND status = 'RESERVED'
+                WHERE id = ? AND status IN ('RESERVED', 'CHECKED_IN')
                 """,
-                (completion_time, attendance_record_id),
+                (
+                    completion_time,
+                    completion_time,
+                    completion_time,
+                    attendance_record_id,
+                ),
             )
         except Exception:
             connection.rollback()
@@ -1627,6 +1692,14 @@ def cancel_attendance(
                 409,
                 "INVALID_ATTENDANCE_TRANSITION",
                 "완료된 수강은 복구 API로 취소해야 합니다.",
+                attendance_record_id=attendance_record_id,
+            )
+        # 체크인한 뒤에는 회원이 스스로 취소할 수 없다. 사업자 문의로 안내한다.
+        if attendance["status"] == "CHECKED_IN":
+            raise _error(
+                409,
+                "ATTENDANCE_ALREADY_CHECKED_IN",
+                "이미 출석 처리된 예약은 취소할 수 없습니다. 아카데미에 문의해 주세요.",
                 attendance_record_id=attendance_record_id,
             )
         with connection:
@@ -1722,11 +1795,15 @@ def restore_attendance(
                 """,
                 (student_pass_id,),
             )
+            # 복구 후에는 CANCELLED 상태이므로 체크인·퇴실·완료 시각을 모두 비운다.
             connection.execute(
                 """
                 UPDATE attendance_records
                 SET status = 'CANCELLED',
                     session_delta = 0,
+                    checked_in_at = NULL,
+                    checked_out_at = NULL,
+                    completed_at = NULL,
                     cancelled_at = ?,
                     memo = CASE
                         WHEN memo IS NULL OR memo = ''
@@ -1757,6 +1834,966 @@ def restore_attendance(
         )
     finally:
         connection.close()
+
+
+def _require_attendance_pass(
+    connection: sqlite3.Connection,
+    academy_id: int,
+    attendance: sqlite3.Row,
+) -> sqlite3.Row:
+    """수강 기록에 연결된 보유 수강권을 가져온다."""
+    student_pass_id = attendance["student_pass_id"]
+    student_id = attendance["student_id"]
+    if student_pass_id is None or student_id is None:
+        raise _error(
+            409,
+            "STUDENT_PASS_NOT_FOUND",
+            "연결된 보유 수강권이 없습니다.",
+            attendance_record_id=attendance["id"],
+        )
+    return _get_student_pass_row(
+        connection,
+        academy_id,
+        student_id,
+        student_pass_id,
+    )
+
+
+def check_in_attendance(
+    academy_id: int,
+    attendance_record_id: int,
+) -> dict[str, Any]:
+    """회원 출석 체크인. 잔여 횟수는 차감하지 않는다.
+
+    이번 단계에서는 체크인 가능 시간 범위를 제한하지 않는다. 예약이
+    RESERVED 이면 예정일 이전이나 이후에도 체크인할 수 있다.
+    """
+    checked_in_at = _now()
+    connection = _connect()
+    try:
+        connection.execute("BEGIN IMMEDIATE")
+        try:
+            attendance = _get_attendance_row(
+                connection,
+                academy_id,
+                attendance_record_id,
+            )
+            if attendance["status"] == "CHECKED_IN":
+                raise _error(
+                    409,
+                    "ATTENDANCE_ALREADY_CHECKED_IN",
+                    "이미 출석 처리된 예약입니다.",
+                    attendance_record_id=attendance_record_id,
+                    checked_in_at=attendance["checked_in_at"],
+                )
+            if attendance["status"] != "RESERVED":
+                raise _error(
+                    409,
+                    "ATTENDANCE_NOT_RESERVED",
+                    "예약 상태의 수강 기록만 출석할 수 있습니다.",
+                    attendance_record_id=attendance_record_id,
+                    status=attendance["status"],
+                )
+            student_pass = _require_attendance_pass(
+                connection,
+                academy_id,
+                attendance,
+            )
+            if student_pass["remaining_sessions"] <= 0:
+                raise _error(
+                    409,
+                    "INSUFFICIENT_REMAINING_SESSIONS",
+                    "남은 수강 횟수가 없습니다.",
+                    student_pass_id=student_pass["id"],
+                    remaining_sessions=student_pass["remaining_sessions"],
+                )
+            if student_pass["expire_date"] < _today():
+                raise _error(
+                    400,
+                    "PASS_EXPIRED",
+                    "만료된 수강권입니다.",
+                    student_pass_id=student_pass["id"],
+                    expire_date=student_pass["expire_date"],
+                )
+            cursor = connection.execute(
+                """
+                UPDATE attendance_records
+                SET status = 'CHECKED_IN',
+                    session_delta = 0,
+                    checked_in_at = ?,
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE id = ? AND status = 'RESERVED'
+                """,
+                (checked_in_at, attendance_record_id),
+            )
+            if cursor.rowcount != 1:
+                raise _error(
+                    409,
+                    "ATTENDANCE_NOT_RESERVED",
+                    "예약 상태의 수강 기록만 출석할 수 있습니다.",
+                    attendance_record_id=attendance_record_id,
+                )
+        except Exception:
+            connection.rollback()
+            raise
+        else:
+            connection.commit()
+        result = _attendance_response(
+            _get_attendance_row(
+                connection,
+                academy_id,
+                attendance_record_id,
+            )
+        )
+        # 체크인 시점에는 차감하지 않으므로 잔여 횟수는 그대로다.
+        result["remaining_sessions"] = student_pass["remaining_sessions"]
+        return result
+    finally:
+        connection.close()
+
+
+def check_out_attendance(
+    academy_id: int,
+    attendance_record_id: int,
+) -> dict[str, Any]:
+    """회원 퇴실. 수강을 완료 처리하고 잔여 횟수를 1회 차감한다.
+
+    상태 변경과 차감을 한 트랜잭션에서 처리하고, 두 UPDATE 모두 조건부라
+    중복 요청이 두 번 차감되지 않는다.
+    """
+    checked_out_at = _now()
+    connection = _connect()
+    try:
+        connection.execute("BEGIN IMMEDIATE")
+        try:
+            attendance = _get_attendance_row(
+                connection,
+                academy_id,
+                attendance_record_id,
+            )
+            if attendance["status"] == "COMPLETED":
+                raise _error(
+                    409,
+                    "ATTENDANCE_ALREADY_COMPLETED",
+                    "이미 완료된 수강 기록입니다.",
+                    attendance_record_id=attendance_record_id,
+                )
+            if attendance["status"] != "CHECKED_IN":
+                raise _error(
+                    409,
+                    "ATTENDANCE_NOT_CHECKED_IN",
+                    "출석(체크인)한 수강만 퇴실할 수 있습니다.",
+                    attendance_record_id=attendance_record_id,
+                    status=attendance["status"],
+                )
+            student_pass = _require_attendance_pass(
+                connection,
+                academy_id,
+                attendance,
+            )
+            if student_pass["remaining_sessions"] <= 0:
+                raise _error(
+                    409,
+                    "INSUFFICIENT_REMAINING_SESSIONS",
+                    "남은 수강 횟수가 없습니다.",
+                    student_pass_id=student_pass["id"],
+                    remaining_sessions=0,
+                )
+            deducted = connection.execute(
+                """
+                UPDATE student_passes
+                SET remaining_sessions = remaining_sessions - 1,
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE id = ? AND remaining_sessions > 0
+                """,
+                (student_pass["id"],),
+            )
+            if deducted.rowcount != 1:
+                raise _error(
+                    409,
+                    "INSUFFICIENT_REMAINING_SESSIONS",
+                    "남은 수강 횟수가 없습니다.",
+                    student_pass_id=student_pass["id"],
+                )
+            updated = connection.execute(
+                """
+                UPDATE attendance_records
+                SET status = 'COMPLETED',
+                    session_delta = -1,
+                    checked_out_at = ?,
+                    completed_at = ?,
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE id = ? AND status = 'CHECKED_IN'
+                """,
+                (checked_out_at, checked_out_at, attendance_record_id),
+            )
+            if updated.rowcount != 1:
+                # 기록을 바꾸지 못하면 차감도 되돌린다.
+                raise _error(
+                    409,
+                    "ATTENDANCE_NOT_CHECKED_IN",
+                    "출석(체크인)한 수강만 퇴실할 수 있습니다.",
+                    attendance_record_id=attendance_record_id,
+                )
+        except Exception:
+            connection.rollback()
+            raise
+        else:
+            connection.commit()
+        result = _attendance_response(
+            _get_attendance_row(
+                connection,
+                academy_id,
+                attendance_record_id,
+            )
+        )
+        result["remaining_sessions"] = (
+            student_pass["remaining_sessions"] - 1
+        )
+        return result
+    finally:
+        connection.close()
+
+
+# =========================================================
+# 회원 포털 (조회 전용 요약과 예약 목록)
+# =========================================================
+
+RESERVATION_SORT_FIELDS = {
+    "scheduled_at": "ar.scheduled_at",
+    "id": "ar.id",
+    "status": "ar.status",
+    "class_name": "ar.class_name",
+    "created_at": "ar.created_at",
+}
+
+_RESERVATION_COLUMNS = """
+    ar.id AS id,
+    ar.student_id AS student_id,
+    ar.student_pass_id AS student_pass_id,
+    ar.class_name AS class_name,
+    ar.scheduled_at AS scheduled_at,
+    ar.scheduled_end_at AS scheduled_end_at,
+    ar.status AS status,
+    ar.checked_in_at AS checked_in_at,
+    ar.checked_out_at AS checked_out_at,
+    ar.cancelled_at AS cancelled_at,
+    ar.completed_at AS completed_at,
+    ar.memo AS memo,
+    ar.pass_type_id_snapshot AS pass_type_id_snapshot,
+    ar.pass_type_name_snapshot AS pass_type_name,
+    sp.remaining_sessions AS remaining_sessions,
+    sp.expire_date AS pass_expire_date
+"""
+
+
+def _reservation_brief(row: sqlite3.Row | None) -> dict[str, Any] | None:
+    if row is None:
+        return None
+    return {
+        "id": row["id"],
+        "class_name": row["class_name"],
+        "scheduled_at": row["scheduled_at"],
+        "scheduled_end_at": row["scheduled_end_at"],
+        "status": row["status"],
+    }
+
+
+def get_student_portal_summary(
+    academy_id: int,
+    student_id: int,
+) -> dict[str, Any]:
+    """회원 포털 홈에 필요한 값을 한 번에 조회한다."""
+    today = _today()
+    now = _now()
+    connection = _connect()
+    try:
+        student = _get_student_row(connection, academy_id, student_id)
+        passes = connection.execute(
+            """
+            SELECT
+                COUNT(*) AS total_count,
+                COALESCE(SUM(CASE
+                    WHEN remaining_sessions > 0 AND expire_date >= ?
+                    THEN 1 ELSE 0
+                END), 0) AS available_count,
+                COALESCE(SUM(remaining_sessions), 0)
+                    AS total_remaining_sessions,
+                MIN(CASE
+                    WHEN remaining_sessions > 0 AND expire_date >= ?
+                    THEN expire_date
+                END) AS nearest_expire_date
+            FROM student_passes
+            WHERE student_id = ?
+            """,
+            (today, today, student_id),
+        ).fetchone()
+        today_count = connection.execute(
+            """
+            SELECT COUNT(*)
+            FROM attendance_records
+            WHERE student_id = ?
+              AND academy_id = ?
+              AND substr(scheduled_at, 1, 10) = ?
+              AND status != 'CANCELLED'
+            """,
+            (student_id, academy_id, today),
+        ).fetchone()[0]
+        next_reservation = connection.execute(
+            """
+            SELECT id, class_name, scheduled_at, scheduled_end_at, status
+            FROM attendance_records
+            WHERE student_id = ?
+              AND academy_id = ?
+              AND status = 'RESERVED'
+              AND scheduled_end_at >= ?
+            ORDER BY scheduled_at ASC
+            LIMIT 1
+            """,
+            (student_id, academy_id, now),
+        ).fetchone()
+        checked_in = connection.execute(
+            """
+            SELECT id, class_name, scheduled_at, scheduled_end_at, status
+            FROM attendance_records
+            WHERE student_id = ?
+              AND academy_id = ?
+              AND status = 'CHECKED_IN'
+            ORDER BY checked_in_at DESC
+            LIMIT 1
+            """,
+            (student_id, academy_id),
+        ).fetchone()
+        recent_rows = connection.execute(
+            """
+            SELECT id, class_name, scheduled_at, scheduled_end_at, status
+            FROM attendance_records
+            WHERE student_id = ? AND academy_id = ?
+            ORDER BY scheduled_at DESC
+            LIMIT 5
+            """,
+            (student_id, academy_id),
+        ).fetchall()
+        inquiries = connection.execute(
+            """
+            SELECT
+                COALESCE(SUM(CASE WHEN status = 'OPEN' THEN 1 ELSE 0 END), 0)
+                    AS open_count,
+                COALESCE(SUM(CASE
+                    WHEN status = 'ANSWERED' THEN 1 ELSE 0
+                END), 0) AS answered_count,
+                COALESCE(SUM(CASE
+                    WHEN status = 'CLOSED' THEN 1 ELSE 0
+                END), 0) AS closed_count
+            FROM inquiries
+            WHERE student_id = ? AND academy_id = ?
+            """,
+            (student_id, academy_id),
+        ).fetchone()
+        return {
+            "student": {
+                "id": student["id"],
+                "name": student["name"],
+                "expire_date": student["expire_date"],
+                "is_active": bool(
+                    student["expire_date"] is not None
+                    and student["expire_date"] >= today
+                ),
+            },
+            "passes": {
+                "total_count": passes["total_count"],
+                "available_count": passes["available_count"],
+                "total_remaining_sessions": passes[
+                    "total_remaining_sessions"
+                ],
+                "nearest_expire_date": passes["nearest_expire_date"],
+            },
+            "attendance": {
+                "today_count": today_count,
+                "next_reservation": _reservation_brief(next_reservation),
+                "currently_checked_in": _reservation_brief(checked_in),
+                "recent_items": [
+                    _reservation_brief(row) for row in recent_rows
+                ],
+            },
+            "inquiries": {
+                "open_count": inquiries["open_count"],
+                "answered_count": inquiries["answered_count"],
+                "closed_count": inquiries["closed_count"],
+            },
+        }
+    finally:
+        connection.close()
+
+
+def list_student_reservations(
+    academy_id: int,
+    student_id: int,
+    *,
+    status: str | None,
+    scheduled_from: str | None,
+    scheduled_to: str | None,
+    upcoming_only: bool,
+    limit: int,
+    offset: int,
+    sort: str,
+    order: str,
+) -> dict[str, Any]:
+    """회원 예약 목록. 수강권 잔여 횟수까지 한 번에 돌려준다."""
+    ordering = _sort_clause(sort, order, RESERVATION_SORT_FIELDS)
+    conditions = ["ar.academy_id = ?", "ar.student_id = ?"]
+    parameters: list[Any] = [academy_id, student_id]
+    if status:
+        conditions.append("ar.status = ?")
+        parameters.append(status)
+    if scheduled_from:
+        conditions.append("ar.scheduled_at >= ?")
+        parameters.append(scheduled_from)
+    if scheduled_to:
+        conditions.append("ar.scheduled_at <= ?")
+        parameters.append(scheduled_to)
+    if upcoming_only:
+        # 아직 처리되지 않은 기록만 본다. 체크인한 수강은 예정 시각이
+        # 지났어도 퇴실이 남아 있으므로 항상 포함한다.
+        conditions.append("ar.status IN ('RESERVED', 'CHECKED_IN')")
+        conditions.append(
+            "(ar.status = 'CHECKED_IN' OR ar.scheduled_end_at >= ?)"
+        )
+        parameters.append(_now())
+    where = f" WHERE {' AND '.join(conditions)}"
+    connection = _connect()
+    try:
+        _get_student_row(connection, academy_id, student_id)
+        return _page(
+            connection,
+            f"""
+            SELECT {_RESERVATION_COLUMNS}
+            FROM attendance_records AS ar
+            LEFT JOIN student_passes AS sp ON sp.id = ar.student_pass_id
+            {where}
+            ORDER BY {ordering}
+            """,
+            f"SELECT COUNT(*) FROM attendance_records AS ar{where}",
+            parameters,
+            limit,
+            offset,
+        )
+    finally:
+        connection.close()
+
+
+# =========================================================
+# 문의(1:1 문의와 답변)
+# =========================================================
+
+INQUIRY_CATEGORIES = (
+    "PASS",
+    "RESERVATION",
+    "ATTENDANCE",
+    "CHECK_IN_OUT",
+    "DEDUCTION_ERROR",
+    "EXTENSION",
+    "REFUND",
+    "FACILITY",
+    "OTHER",
+)
+
+INQUIRY_SORT_FIELDS = {
+    "created_at": "i.created_at",
+    "updated_at": "i.updated_at",
+    "id": "i.id",
+    "status": "i.status",
+    "category": "i.category",
+}
+
+_INQUIRY_COLUMNS = """
+    i.id AS id,
+    i.academy_id AS academy_id,
+    i.student_id AS student_id,
+    i.student_name_snapshot AS student_name_snapshot,
+    i.category AS category,
+    i.title AS title,
+    i.status AS status,
+    i.related_student_pass_id AS related_student_pass_id,
+    i.related_attendance_record_id AS related_attendance_record_id,
+    i.created_at AS created_at,
+    i.updated_at AS updated_at,
+    i.closed_at AS closed_at,
+    (
+        SELECT COUNT(*)
+        FROM inquiry_messages AS m
+        WHERE m.inquiry_id = i.id
+    ) AS message_count,
+    (
+        SELECT MAX(m.created_at)
+        FROM inquiry_messages AS m
+        WHERE m.inquiry_id = i.id
+    ) AS last_message_at
+"""
+
+
+def _get_inquiry_row(
+    connection: sqlite3.Connection,
+    academy_id: int,
+    inquiry_id: int,
+    student_id: int | None = None,
+) -> sqlite3.Row:
+    conditions = ["i.id = ?", "i.academy_id = ?"]
+    parameters: list[Any] = [inquiry_id, academy_id]
+    if student_id is not None:
+        conditions.append("i.student_id = ?")
+        parameters.append(student_id)
+    row = connection.execute(
+        f"""
+        SELECT {_INQUIRY_COLUMNS}
+        FROM inquiries AS i
+        WHERE {' AND '.join(conditions)}
+        """,
+        parameters,
+    ).fetchone()
+    if row is None:
+        raise _error(
+            404,
+            "INQUIRY_NOT_FOUND",
+            "문의를 찾을 수 없습니다.",
+            academy_id=academy_id,
+            inquiry_id=inquiry_id,
+        )
+    return row
+
+
+def _inquiry_messages(
+    connection: sqlite3.Connection,
+    inquiry_id: int,
+) -> list[dict[str, Any]]:
+    rows = connection.execute(
+        """
+        SELECT id, inquiry_id, sender_type, message, created_at
+        FROM inquiry_messages
+        WHERE inquiry_id = ?
+        ORDER BY created_at ASC, id ASC
+        """,
+        (inquiry_id,),
+    ).fetchall()
+    return [dict(row) for row in rows]
+
+
+def _inquiry_detail(
+    connection: sqlite3.Connection,
+    row: sqlite3.Row,
+) -> dict[str, Any]:
+    detail = dict(row)
+    related_pass = None
+    if row["related_student_pass_id"] is not None:
+        pass_row = connection.execute(
+            """
+            SELECT id, pass_type_name_snapshot, remaining_sessions,
+                   total_sessions, expire_date
+            FROM student_passes
+            WHERE id = ?
+            """,
+            (row["related_student_pass_id"],),
+        ).fetchone()
+        if pass_row is not None:
+            related_pass = {
+                "id": pass_row["id"],
+                "pass_type_name": pass_row["pass_type_name_snapshot"],
+                "total_sessions": pass_row["total_sessions"],
+                "remaining_sessions": pass_row["remaining_sessions"],
+                "expire_date": pass_row["expire_date"],
+            }
+    related_record = None
+    if row["related_attendance_record_id"] is not None:
+        record_row = connection.execute(
+            """
+            SELECT id, class_name, scheduled_at, scheduled_end_at, status
+            FROM attendance_records
+            WHERE id = ?
+            """,
+            (row["related_attendance_record_id"],),
+        ).fetchone()
+        if record_row is not None:
+            related_record = _reservation_brief(record_row)
+    detail["related_student_pass"] = related_pass
+    detail["related_attendance_record"] = related_record
+    detail["messages"] = _inquiry_messages(connection, row["id"])
+    return detail
+
+
+def _clean_message(message: Any) -> str:
+    text = str(message or "").strip()
+    if not text:
+        raise _error(
+            400,
+            "EMPTY_INQUIRY_MESSAGE",
+            "메시지 내용을 입력해 주세요.",
+        )
+    return text
+
+
+def create_inquiry(
+    academy_id: int,
+    student_id: int,
+    values: Mapping[str, Any],
+) -> dict[str, Any]:
+    """문의와 최초 메시지를 한 트랜잭션으로 생성한다."""
+    data = _normalized_values(values)
+    category = data.get("category")
+    if category not in INQUIRY_CATEGORIES:
+        raise _error(
+            422,
+            "INVALID_INQUIRY_CATEGORY",
+            "허용되지 않은 문의 유형입니다.",
+            category=category,
+        )
+    title = str(data.get("title") or "").strip()
+    if not title:
+        raise _error(400, "EMPTY_INQUIRY_TITLE", "제목을 입력해 주세요.")
+    message = _clean_message(data.get("message"))
+    related_pass_id = data.get("related_student_pass_id")
+    related_record_id = data.get("related_attendance_record_id")
+
+    connection = _connect()
+    try:
+        connection.execute("BEGIN IMMEDIATE")
+        try:
+            student = _get_student_row(connection, academy_id, student_id)
+            if related_pass_id is not None:
+                owned = connection.execute(
+                    """
+                    SELECT 1 FROM student_passes
+                    WHERE id = ? AND student_id = ?
+                    """,
+                    (related_pass_id, student_id),
+                ).fetchone()
+                if owned is None:
+                    raise _error(
+                        400,
+                        "STUDENT_PASS_OWNER_MISMATCH",
+                        "본인 수강권만 문의에 연결할 수 있습니다.",
+                        student_pass_id=related_pass_id,
+                    )
+            if related_record_id is not None:
+                owned = connection.execute(
+                    """
+                    SELECT 1 FROM attendance_records
+                    WHERE id = ? AND student_id = ? AND academy_id = ?
+                    """,
+                    (related_record_id, student_id, academy_id),
+                ).fetchone()
+                if owned is None:
+                    raise _error(
+                        400,
+                        "ATTENDANCE_RECORD_OWNER_MISMATCH",
+                        "본인 수강 기록만 문의에 연결할 수 있습니다.",
+                        attendance_record_id=related_record_id,
+                    )
+            cursor = connection.execute(
+                """
+                INSERT INTO inquiries (
+                    academy_id,
+                    student_id,
+                    student_name_snapshot,
+                    category,
+                    title,
+                    status,
+                    related_student_pass_id,
+                    related_attendance_record_id
+                ) VALUES (?, ?, ?, ?, ?, 'OPEN', ?, ?)
+                """,
+                (
+                    academy_id,
+                    student_id,
+                    student["name"],
+                    category,
+                    title,
+                    related_pass_id,
+                    related_record_id,
+                ),
+            )
+            inquiry_id = cursor.lastrowid
+            connection.execute(
+                """
+                INSERT INTO inquiry_messages (
+                    inquiry_id, sender_type, message
+                ) VALUES (?, 'STUDENT', ?)
+                """,
+                (inquiry_id, message),
+            )
+        except Exception:
+            connection.rollback()
+            raise
+        else:
+            connection.commit()
+        return _inquiry_detail(
+            connection,
+            _get_inquiry_row(connection, academy_id, inquiry_id, student_id),
+        )
+    finally:
+        connection.close()
+
+
+def _list_inquiries(
+    academy_id: int,
+    *,
+    student_id: int | None,
+    status: str | None,
+    category: str | None,
+    limit: int,
+    offset: int,
+    sort: str,
+    order: str,
+    verify_student: bool,
+) -> dict[str, Any]:
+    ordering = _sort_clause(sort, order, INQUIRY_SORT_FIELDS)
+    conditions = ["i.academy_id = ?"]
+    parameters: list[Any] = [academy_id]
+    if student_id is not None:
+        conditions.append("i.student_id = ?")
+        parameters.append(student_id)
+    if status:
+        conditions.append("i.status = ?")
+        parameters.append(status)
+    if category:
+        conditions.append("i.category = ?")
+        parameters.append(category)
+    where = f" WHERE {' AND '.join(conditions)}"
+    connection = _connect()
+    try:
+        if verify_student and student_id is not None:
+            _get_student_row(connection, academy_id, student_id)
+        else:
+            _get_academy_row(connection, academy_id)
+        return _page(
+            connection,
+            f"""
+            SELECT {_INQUIRY_COLUMNS}
+            FROM inquiries AS i
+            {where}
+            ORDER BY {ordering}
+            """,
+            f"SELECT COUNT(*) FROM inquiries AS i{where}",
+            parameters,
+            limit,
+            offset,
+        )
+    finally:
+        connection.close()
+
+
+def list_student_inquiries(
+    academy_id: int,
+    student_id: int,
+    *,
+    status: str | None,
+    category: str | None,
+    limit: int,
+    offset: int,
+    sort: str,
+    order: str,
+) -> dict[str, Any]:
+    return _list_inquiries(
+        academy_id,
+        student_id=student_id,
+        status=status,
+        category=category,
+        limit=limit,
+        offset=offset,
+        sort=sort,
+        order=order,
+        verify_student=True,
+    )
+
+
+def list_academy_inquiries(
+    academy_id: int,
+    *,
+    student_id: int | None,
+    status: str | None,
+    category: str | None,
+    limit: int,
+    offset: int,
+    sort: str,
+    order: str,
+) -> dict[str, Any]:
+    return _list_inquiries(
+        academy_id,
+        student_id=student_id,
+        status=status,
+        category=category,
+        limit=limit,
+        offset=offset,
+        sort=sort,
+        order=order,
+        verify_student=False,
+    )
+
+
+def get_student_inquiry(
+    academy_id: int,
+    student_id: int,
+    inquiry_id: int,
+) -> dict[str, Any]:
+    connection = _connect()
+    try:
+        _get_student_row(connection, academy_id, student_id)
+        return _inquiry_detail(
+            connection,
+            _get_inquiry_row(connection, academy_id, inquiry_id, student_id),
+        )
+    finally:
+        connection.close()
+
+
+def get_academy_inquiry(
+    academy_id: int,
+    inquiry_id: int,
+) -> dict[str, Any]:
+    connection = _connect()
+    try:
+        _get_academy_row(connection, academy_id)
+        return _inquiry_detail(
+            connection,
+            _get_inquiry_row(connection, academy_id, inquiry_id),
+        )
+    finally:
+        connection.close()
+
+
+def _add_inquiry_message(
+    academy_id: int,
+    inquiry_id: int,
+    *,
+    student_id: int | None,
+    sender_type: str,
+    message: Any,
+    next_status: str,
+) -> dict[str, Any]:
+    """문의에 메시지를 추가하고 상태를 갱신한다(한 트랜잭션)."""
+    text = _clean_message(message)
+    connection = _connect()
+    try:
+        connection.execute("BEGIN IMMEDIATE")
+        try:
+            if student_id is not None:
+                _get_student_row(connection, academy_id, student_id)
+            inquiry = _get_inquiry_row(
+                connection,
+                academy_id,
+                inquiry_id,
+                student_id,
+            )
+            if inquiry["status"] == "CLOSED":
+                raise _error(
+                    409,
+                    "INQUIRY_CLOSED",
+                    "종료된 문의에는 메시지를 추가할 수 없습니다.",
+                    inquiry_id=inquiry_id,
+                )
+            connection.execute(
+                """
+                INSERT INTO inquiry_messages (
+                    inquiry_id, sender_type, message
+                ) VALUES (?, ?, ?)
+                """,
+                (inquiry_id, sender_type, text),
+            )
+            connection.execute(
+                """
+                UPDATE inquiries
+                SET status = ?, updated_at = CURRENT_TIMESTAMP
+                WHERE id = ?
+                """,
+                (next_status, inquiry_id),
+            )
+        except Exception:
+            connection.rollback()
+            raise
+        else:
+            connection.commit()
+        return _inquiry_detail(
+            connection,
+            _get_inquiry_row(connection, academy_id, inquiry_id, student_id),
+        )
+    finally:
+        connection.close()
+
+
+def add_student_inquiry_message(
+    academy_id: int,
+    student_id: int,
+    inquiry_id: int,
+    message: Any,
+) -> dict[str, Any]:
+    """회원이 메시지를 추가하면 답변 대기(OPEN) 상태로 되돌린다."""
+    return _add_inquiry_message(
+        academy_id,
+        inquiry_id,
+        student_id=student_id,
+        sender_type="STUDENT",
+        message=message,
+        next_status="OPEN",
+    )
+
+
+def add_academy_inquiry_message(
+    academy_id: int,
+    inquiry_id: int,
+    message: Any,
+) -> dict[str, Any]:
+    """아카데미가 답변하면 상태를 ANSWERED 로 바꾼다."""
+    return _add_inquiry_message(
+        academy_id,
+        inquiry_id,
+        student_id=None,
+        sender_type="ACADEMY",
+        message=message,
+        next_status="ANSWERED",
+    )
+
+
+def _close_inquiry(
+    academy_id: int,
+    inquiry_id: int,
+    student_id: int | None,
+) -> dict[str, Any]:
+    connection = _connect()
+    try:
+        if student_id is not None:
+            _get_student_row(connection, academy_id, student_id)
+        _get_inquiry_row(connection, academy_id, inquiry_id, student_id)
+        with connection:
+            connection.execute(
+                """
+                UPDATE inquiries
+                SET status = 'CLOSED',
+                    closed_at = COALESCE(closed_at, ?),
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE id = ?
+                """,
+                (_now(), inquiry_id),
+            )
+        return _inquiry_detail(
+            connection,
+            _get_inquiry_row(connection, academy_id, inquiry_id, student_id),
+        )
+    finally:
+        connection.close()
+
+
+def close_student_inquiry(
+    academy_id: int,
+    student_id: int,
+    inquiry_id: int,
+) -> dict[str, Any]:
+    return _close_inquiry(academy_id, inquiry_id, student_id)
+
+
+def close_academy_inquiry(
+    academy_id: int,
+    inquiry_id: int,
+) -> dict[str, Any]:
+    return _close_inquiry(academy_id, inquiry_id, None)
 
 
 # =========================================================

@@ -68,6 +68,7 @@ ACADEMIES = (
                 "total_sessions": 2,
                 "validity_days": 14,
                 "price": 40000,
+                "session_duration_minutes": 50,
                 "description": "처음 오신 분을 위한 체험 수업 2회.",
             },
             {
@@ -76,6 +77,7 @@ ACADEMIES = (
                 "total_sessions": 10,
                 "validity_days": 90,
                 "price": 350000,
+                "session_duration_minutes": 50,
                 "description": "가장 많이 선택하는 기본 그룹 수업권.",
             },
             {
@@ -84,6 +86,7 @@ ACADEMIES = (
                 "total_sessions": 20,
                 "validity_days": 180,
                 "price": 640000,
+                "session_duration_minutes": 50,
                 "description": "장기 등록 회원을 위한 20회권.",
             },
             {
@@ -92,6 +95,7 @@ ACADEMIES = (
                 "total_sessions": 5,
                 "validity_days": 60,
                 "price": 500000,
+                "session_duration_minutes": 60,
                 "description": "1:1 자세 교정 중심 개인 레슨.",
             },
         ),
@@ -114,6 +118,7 @@ ACADEMIES = (
                 "total_sessions": 3,
                 "validity_days": 21,
                 "price": 45000,
+                "session_duration_minutes": 60,
                 "description": "요가가 처음인 분을 위한 체험권.",
             },
             {
@@ -122,6 +127,7 @@ ACADEMIES = (
                 "total_sessions": 10,
                 "validity_days": 90,
                 "price": 300000,
+                "session_duration_minutes": 60,
                 "description": "주 3회 수련에 맞춘 기본권.",
             },
             {
@@ -130,6 +136,7 @@ ACADEMIES = (
                 "total_sessions": 20,
                 "validity_days": 180,
                 "price": 540000,
+                "session_duration_minutes": 90,
                 "description": "꾸준히 수련하는 회원을 위한 장기권.",
             },
             {
@@ -138,6 +145,7 @@ ACADEMIES = (
                 "total_sessions": 5,
                 "validity_days": 45,
                 "price": 450000,
+                "session_duration_minutes": 60,
                 "description": "체형에 맞춘 1:1 요가 수업.",
             },
         ),
@@ -161,7 +169,14 @@ COHORTS = (
         "count": 5,
         "created": (-20, -3),
         "passes": (
-            {"role": "standard", "start": -7, "leave": 8, "today": 1, "future": 1},
+            {
+                "role": "standard",
+                "start": -7,
+                "leave": 8,
+                "checked_in": 1,
+                "today": 1,
+                "future": 1,
+            },
         ),
     },
     {
@@ -354,6 +369,7 @@ def _seed_student_pass(
     reservations = (
         spec.get("cancelled", 0)
         + spec.get("pending", 0)
+        + spec.get("checked_in", 0)
         + spec.get("today", 0)
         + spec.get("future", 0)
     )
@@ -434,6 +450,25 @@ def _seed_student_pass(
         counters["attendance_records"] += 1
         counters["pending_past"] += 1
 
+    # 지금 수업 중인 회원(체크인 상태). 잔여 횟수는 아직 차감되지 않는다.
+    if expire_day >= today:
+        for _ in range(spec.get("checked_in", 0)):
+            if remaining <= 0:
+                break
+            record = db_connector.create_attendance_record(
+                academy["id"],
+                {
+                    "student_id": student_id,
+                    "student_pass_id": student_pass_id,
+                    "class_name": rng.choice(class_names),
+                    "scheduled_at": _local_iso(today, 9, 0),
+                    "memo": None,
+                },
+            )
+            db_connector.check_in_attendance(academy["id"], record["id"])
+            counters["attendance_records"] += 1
+            counters["checked_in"] += 1
+
     if expire_day >= today:
         for _ in range(spec.get("today", 0)):
             if remaining <= 0:
@@ -478,6 +513,123 @@ def _seed_student_pass(
             counters["reserved_future"] += 1
 
 
+# 문의 시나리오. answer 가 있으면 아카데미 답변까지, close 가 참이면 종료까지
+# 만든다. link 는 관련 수강권·수강 기록 연결 여부다.
+INQUIRY_SCENARIOS = (
+    {
+        "category": "DEDUCTION_ERROR",
+        "title": "수강 횟수가 잘못 차감된 것 같아요",
+        "message": "오늘 수업이 두 번 차감된 것 같습니다. 확인 부탁드려요.",
+        "link": True,
+        "answer": None,
+        "close": False,
+    },
+    {
+        "category": "RESERVATION",
+        "title": "예약 시간을 변경하고 싶습니다",
+        "message": "다음 주 화요일 저녁 수업으로 옮길 수 있을까요?",
+        "link": True,
+        "answer": None,
+        "close": False,
+    },
+    {
+        "category": "EXTENSION",
+        "title": "수강권 기간 연장 문의",
+        "message": "출장 때문에 2주 정도 쉬어야 하는데 연장이 될까요?",
+        "link": True,
+        "answer": "네, 사유가 확인되면 2주까지 연장해 드리고 있어요. 방문 시 말씀해 주세요.",
+        "close": False,
+    },
+    {
+        "category": "CHECK_IN_OUT",
+        "title": "퇴실 처리가 안 됐어요",
+        "message": "어제 수업 후 퇴실 버튼을 못 눌렀습니다. 처리 부탁드립니다.",
+        "link": False,
+        "answer": "확인 후 어제 수업을 완료 처리했습니다. 잔여 횟수도 정상 반영됐어요.",
+        "close": False,
+    },
+    {
+        "category": "FACILITY",
+        "title": "탈의실 사물함 문의",
+        "message": "사물함을 따로 신청해야 하나요?",
+        "link": False,
+        "answer": "사물함은 데스크에서 월 단위로 신청하실 수 있습니다.",
+        "close": True,
+    },
+    {
+        "category": "REFUND",
+        "title": "환불 규정이 궁금합니다",
+        "message": "개인 사정으로 중단하게 되면 환불이 가능한지 궁금합니다.",
+        "link": False,
+        "answer": "환불은 잔여 횟수 기준으로 안내드리고 있어요. 자세한 내용은 상담 시 알려드릴게요.",
+        "close": True,
+    },
+)
+
+
+def _seed_inquiries(
+    academy_id: int,
+    student_ids: list[int],
+    counters: dict[str, int],
+) -> None:
+    """회원 문의와 답변을 만든다. 관련 수강권·수강 기록도 연결한다."""
+    for index, scenario in enumerate(INQUIRY_SCENARIOS):
+        if index >= len(student_ids):
+            break
+        student_id = student_ids[index]
+        related_pass_id = None
+        related_record_id = None
+        if scenario["link"]:
+            passes = db_connector.list_student_passes(
+                academy_id,
+                student_id,
+                available=None,
+                expired=None,
+                pass_type_id=None,
+                limit=1,
+                offset=0,
+                sort="id",
+                order="desc",
+            )
+            if passes["items"]:
+                related_pass_id = passes["items"][0]["id"]
+            records = db_connector.list_student_attendance_records(
+                academy_id,
+                student_id,
+                status=None,
+                scheduled_from=None,
+                scheduled_to=None,
+                limit=1,
+                offset=0,
+            )
+            if records["items"]:
+                related_record_id = records["items"][0]["id"]
+
+        inquiry = db_connector.create_inquiry(
+            academy_id,
+            student_id,
+            {
+                "category": scenario["category"],
+                "title": scenario["title"],
+                "message": scenario["message"],
+                "related_student_pass_id": related_pass_id,
+                "related_attendance_record_id": related_record_id,
+            },
+        )
+        counters["inquiries"] += 1
+        counters["inquiry_messages"] += 1
+
+        if scenario["answer"]:
+            db_connector.add_academy_inquiry_message(
+                academy_id,
+                inquiry["id"],
+                scenario["answer"],
+            )
+            counters["inquiry_messages"] += 1
+        if scenario["close"]:
+            db_connector.close_academy_inquiry(academy_id, inquiry["id"])
+
+
 def _seed_academy(
     rng: random.Random,
     academy_spec: dict[str, Any],
@@ -505,6 +657,9 @@ def _seed_academy(
                 "total_sessions": template["total_sessions"],
                 "validity_days": template["validity_days"],
                 "price": template["price"],
+                "session_duration_minutes": template[
+                    "session_duration_minutes"
+                ],
             },
         )
         pass_types[template["role"]] = created
@@ -516,6 +671,7 @@ def _seed_academy(
     }
 
     student_number = 0
+    seeded_student_ids: list[int] = []
     for cohort in COHORTS:
         for _ in range(cohort["count"]):
             student_number += 1
@@ -542,6 +698,7 @@ def _seed_academy(
                 },
             )
             counters["students"] += 1
+            seeded_student_ids.append(student["id"])
 
             low, high = cohort["created"]
             created_day = today + timedelta(days=rng.randint(low, high))
@@ -567,6 +724,9 @@ def _seed_academy(
                     counters,
                 )
 
+    # 문의는 수강권·수강 기록이 다 만들어진 뒤에 연결한다.
+    _seed_inquiries(academy["id"], seeded_student_ids, counters)
+
 
 def seed_database(database_path: Path = DATABASE_PATH) -> dict[str, int]:
     """DB를 새로 만들고 테스트용 데이터를 채운다."""
@@ -584,8 +744,11 @@ def seed_database(database_path: Path = DATABASE_PATH) -> dict[str, int]:
         "completed": 0,
         "cancelled": 0,
         "pending_past": 0,
+        "checked_in": 0,
         "reserved_today": 0,
         "reserved_future": 0,
+        "inquiries": 0,
+        "inquiry_messages": 0,
     }
     backdates: list[tuple[str, int]] = []
 
@@ -612,8 +775,11 @@ def main() -> int:
         ("completed", "  └ 완료"),
         ("cancelled", "  └ 취소"),
         ("pending_past", "  └ 미처리(과거 예약)"),
+        ("checked_in", "  └ 체크인(수업 중)"),
         ("reserved_today", "  └ 오늘 예약"),
         ("reserved_future", "  └ 향후 예약"),
+        ("inquiries", "문의"),
+        ("inquiry_messages", "  └ 메시지"),
     )
     for key, label in labels:
         print(f"  {label}: {counters[key]}건")

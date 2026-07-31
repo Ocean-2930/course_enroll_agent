@@ -12,6 +12,7 @@ from api.common import (
     Order,
 )
 from api.models import (
+    AttendanceActionResponse,
     AttendanceCancelRequest,
     AttendanceCompleteRequest,
     AttendanceRecordCreate,
@@ -133,11 +134,59 @@ def update_attendance_record(
 
 
 @router.post(
+    "/{attendance_record_id}/check-in",
+    response_model=AttendanceActionResponse,
+    operation_id="check_in_attendance",
+    summary="출석 체크인",
+    description=(
+        "RESERVED 예약을 CHECKED_IN 으로 바꾸고 체크인 시각을 기록한다. "
+        "이 시점에는 잔여 횟수를 차감하지 않는다. 이미 체크인했으면 "
+        "409 ATTENDANCE_ALREADY_CHECKED_IN, 예약 상태가 아니면 "
+        "409 ATTENDANCE_NOT_RESERVED 를 반환한다. 현재는 체크인 가능 "
+        "시간 범위를 제한하지 않는다."
+    ),
+)
+def check_in_attendance(
+    academy_id: int,
+    attendance_record_id: int,
+) -> dict:
+    return db_connector.check_in_attendance(
+        academy_id,
+        attendance_record_id,
+    )
+
+
+@router.post(
+    "/{attendance_record_id}/check-out",
+    response_model=AttendanceActionResponse,
+    operation_id="check_out_attendance",
+    summary="퇴실 및 수강 완료",
+    description=(
+        "CHECKED_IN 수강을 COMPLETED 로 바꾸고 퇴실·완료 시각을 기록하며 "
+        "잔여 횟수를 1회 차감한다. 상태 변경과 차감은 한 트랜잭션이라 "
+        "중복 요청이 두 번 차감되지 않는다."
+    ),
+)
+def check_out_attendance(
+    academy_id: int,
+    attendance_record_id: int,
+) -> dict:
+    return db_connector.check_out_attendance(
+        academy_id,
+        attendance_record_id,
+    )
+
+
+@router.post(
     "/{attendance_record_id}/complete",
     response_model=AttendanceRecordResponse,
     operation_id="complete_attendance",
-    summary="수강 완료 처리",
-    description="잔여 횟수 차감과 완료 처리를 한 트랜잭션으로 처리합니다.",
+    summary="수강 완료 처리(사업자)",
+    description=(
+        "RESERVED 와 CHECKED_IN 모두 완료 처리할 수 있습니다. 잔여 횟수 "
+        "차감과 완료 처리를 한 트랜잭션으로 수행합니다. 예약 상태에서 "
+        "바로 완료하면 완료 시각을 체크인 시각으로도 기록합니다."
+    ),
 )
 def complete_attendance(
     academy_id: int,

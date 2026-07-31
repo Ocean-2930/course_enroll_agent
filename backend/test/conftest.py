@@ -69,6 +69,7 @@ class Ledger:
         total_sessions: int = 10,
         validity_days: int = 90,
         price: int = 300000,
+        session_duration_minutes: int = 50,
     ) -> dict:
         response = self.client.post(
             f"/api/academies/{academy_id}/pass-types",
@@ -77,6 +78,7 @@ class Ledger:
                 "total_sessions": total_sessions,
                 "validity_days": validity_days,
                 "price": price,
+                "session_duration_minutes": session_duration_minutes,
             },
         )
         assert response.status_code == 201, response.text
@@ -150,6 +152,57 @@ class Ledger:
             json={},
         )
         assert response.status_code == 200, response.text
+        return response.json()
+
+    def check_in(self, academy_id: int, attendance_record_id: int) -> dict:
+        response = self.client.post(
+            (
+                f"/api/academies/{academy_id}/attendance-records/"
+                f"{attendance_record_id}/check-in"
+            ),
+            json={},
+        )
+        assert response.status_code == 200, response.text
+        return response.json()
+
+    def check_out(self, academy_id: int, attendance_record_id: int) -> dict:
+        response = self.client.post(
+            (
+                f"/api/academies/{academy_id}/attendance-records/"
+                f"{attendance_record_id}/check-out"
+            ),
+            json={},
+        )
+        assert response.status_code == 200, response.text
+        return response.json()
+
+    def inquiry(
+        self,
+        academy_id: int,
+        student_id: int,
+        *,
+        category: str = "OTHER",
+        title: str = "문의드립니다",
+        message: str = "확인 부탁드립니다.",
+        related_student_pass_id: int | None = None,
+        related_attendance_record_id: int | None = None,
+    ) -> dict:
+        payload: dict = {
+            "category": category,
+            "title": title,
+            "message": message,
+        }
+        if related_student_pass_id is not None:
+            payload["related_student_pass_id"] = related_student_pass_id
+        if related_attendance_record_id is not None:
+            payload["related_attendance_record_id"] = (
+                related_attendance_record_id
+            )
+        response = self.client.post(
+            f"/api/academies/{academy_id}/students/{student_id}/inquiries",
+            json=payload,
+        )
+        assert response.status_code == 201, response.text
         return response.json()
 
     def cancel(self, academy_id: int, attendance_record_id: int) -> dict:

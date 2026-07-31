@@ -6,7 +6,25 @@ from typing import Generic, Literal, TypeVar
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
-AttendanceStatus = Literal["RESERVED", "COMPLETED", "CANCELLED"]
+AttendanceStatus = Literal[
+    "RESERVED",
+    "CHECKED_IN",
+    "COMPLETED",
+    "CANCELLED",
+]
+InquiryStatus = Literal["OPEN", "ANSWERED", "CLOSED"]
+InquiryCategory = Literal[
+    "PASS",
+    "RESERVATION",
+    "ATTENDANCE",
+    "CHECK_IN_OUT",
+    "DEDUCTION_ERROR",
+    "EXTENSION",
+    "REFUND",
+    "FACILITY",
+    "OTHER",
+]
+InquirySender = Literal["STUDENT", "ACADEMY"]
 T = TypeVar("T")
 
 
@@ -87,6 +105,8 @@ class PassTypeCreate(ApiModel):
     total_sessions: int = Field(gt=0)
     validity_days: int = Field(gt=0)
     price: int = Field(default=0, ge=0)
+    # 1회 수강 시간(분). 예약 종료 시각 계산의 기준이 된다.
+    session_duration_minutes: int = Field(default=60, gt=0, le=1440)
 
 
 class PassTypeUpdate(ApiModel):
@@ -95,6 +115,11 @@ class PassTypeUpdate(ApiModel):
     total_sessions: int | None = Field(default=None, gt=0)
     validity_days: int | None = Field(default=None, gt=0)
     price: int | None = Field(default=None, ge=0)
+    session_duration_minutes: int | None = Field(
+        default=None,
+        gt=0,
+        le=1440,
+    )
     sort_index: int | None = Field(default=None, ge=0)
 
     @field_validator(
@@ -102,6 +127,7 @@ class PassTypeUpdate(ApiModel):
         "total_sessions",
         "validity_days",
         "price",
+        "session_duration_minutes",
         "sort_index",
     )
     @classmethod
@@ -119,6 +145,7 @@ class PassTypeResponse(ApiModel):
     total_sessions: int
     validity_days: int
     price: int
+    session_duration_minutes: int
     sort_index: int
     created_at: datetime
     updated_at: datetime
@@ -212,6 +239,7 @@ class StudentPassResponse(ApiModel):
     remaining_sessions: int
     validity_days_snapshot: int
     price_snapshot: int
+    session_duration_minutes_snapshot: int
     purchased_at: datetime
     started_at: datetime | None
     expire_date: date
@@ -279,8 +307,11 @@ class AttendanceRecordResponse(ApiModel):
     pass_type_name_snapshot: str
     class_name: str
     scheduled_at: datetime
+    scheduled_end_at: datetime
     status: AttendanceStatus
     session_delta: int
+    checked_in_at: datetime | None
+    checked_out_at: datetime | None
     cancelled_at: datetime | None
     completed_at: datetime | None
     memo: str | None
@@ -288,9 +319,130 @@ class AttendanceRecordResponse(ApiModel):
     updated_at: datetime
 
 
+class AttendanceActionResponse(AttendanceRecordResponse):
+    """체크인·퇴실 결과. 처리 후 잔여 횟수를 함께 돌려준다."""
+
+    remaining_sessions: int
+
+
 class HealthResponse(ApiModel):
     status: Literal["ok"]
     database: Literal["connected"]
+
+
+# =========================================================
+# 회원 포털 (수강생용 화면과 향후 Agent Tool 이 함께 쓰는 계약)
+# =========================================================
+
+
+class ReservationBrief(ApiModel):
+    id: int
+    class_name: str
+    scheduled_at: datetime
+    scheduled_end_at: datetime
+    status: AttendanceStatus
+
+
+class PortalPassSummary(ApiModel):
+    total_count: int
+    available_count: int
+    total_remaining_sessions: int
+    nearest_expire_date: date | None
+
+
+class PortalAttendanceSummary(ApiModel):
+    today_count: int
+    next_reservation: ReservationBrief | None
+    currently_checked_in: ReservationBrief | None
+    recent_items: list[ReservationBrief]
+
+
+class PortalInquirySummary(ApiModel):
+    open_count: int
+    answered_count: int
+    closed_count: int
+
+
+class StudentPortalSummaryResponse(ApiModel):
+    student: StudentSummaryIdentity
+    passes: PortalPassSummary
+    attendance: PortalAttendanceSummary
+    inquiries: PortalInquirySummary
+
+
+class StudentReservationItem(ApiModel):
+    id: int
+    student_id: int | None
+    student_pass_id: int | None
+    class_name: str
+    scheduled_at: datetime
+    scheduled_end_at: datetime
+    status: AttendanceStatus
+    checked_in_at: datetime | None
+    checked_out_at: datetime | None
+    cancelled_at: datetime | None
+    completed_at: datetime | None
+    memo: str | None
+    pass_type_id_snapshot: int
+    pass_type_name: str
+    remaining_sessions: int | None
+    pass_expire_date: date | None
+
+
+# =========================================================
+# 문의
+# =========================================================
+
+
+class InquiryCreate(ApiModel):
+    category: InquiryCategory
+    title: str = Field(min_length=1, max_length=200)
+    message: str = Field(min_length=1)
+    related_student_pass_id: int | None = Field(default=None, gt=0)
+    related_attendance_record_id: int | None = Field(default=None, gt=0)
+
+
+class InquiryMessageCreate(ApiModel):
+    message: str = Field(min_length=1)
+
+
+class InquiryMessageResponse(ApiModel):
+    id: int
+    inquiry_id: int
+    sender_type: InquirySender
+    message: str
+    created_at: datetime
+
+
+class InquirySummaryResponse(ApiModel):
+    id: int
+    academy_id: int
+    student_id: int | None
+    student_name_snapshot: str
+    category: InquiryCategory
+    title: str
+    status: InquiryStatus
+    related_student_pass_id: int | None
+    related_attendance_record_id: int | None
+    created_at: datetime
+    updated_at: datetime
+    closed_at: datetime | None
+    message_count: int
+    last_message_at: datetime | None
+
+
+class InquiryRelatedPass(ApiModel):
+    id: int
+    pass_type_name: str
+    total_sessions: int
+    remaining_sessions: int
+    expire_date: date
+
+
+class InquiryDetailResponse(InquirySummaryResponse):
+    related_student_pass: InquiryRelatedPass | None
+    related_attendance_record: ReservationBrief | None
+    messages: list[InquiryMessageResponse]
 
 
 # =========================================================

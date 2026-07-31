@@ -7,6 +7,7 @@ from api import (
     analytics,
     attendance_records,
     checks,
+    inquiries,
     pass_types,
     student_passes,
     students,
@@ -35,6 +36,7 @@ api_router.include_router(pass_types.router)
 api_router.include_router(students.router)
 api_router.include_router(student_passes.router)
 api_router.include_router(attendance_records.router)
+api_router.include_router(inquiries.router)
 api_router.include_router(analytics.router)
 api_router.include_router(worklists.router)
 api_router.include_router(checks.router)

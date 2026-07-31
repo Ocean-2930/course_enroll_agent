@@ -400,9 +400,10 @@ def test_reservation_cancel_keeps_remaining_sessions(
     )
 
 
-def test_student_pass_deletion_rule_and_snapshot_preservation(
+def test_student_pass_deletion_keeps_attendance_snapshots(
     client: TestClient,
 ) -> None:
+    """잔여 횟수가 남아 있어도 삭제되고 수강 기록 스냅샷은 유지된다."""
     academy = _create_academy(client)
     pass_type = _create_pass_type(
         client,
@@ -426,23 +427,18 @@ def test_student_pass_deletion_rule_and_snapshot_preservation(
         f"/api/academies/{academy['id']}/students/"
         f"{student['id']}/passes/{issued['id']}"
     )
-
-    rejected = client.delete(pass_url)
-    assert rejected.status_code == 409
-    assert (
-        rejected.json()["error"]["code"]
-        == "STUDENT_PASS_HAS_REMAINING_SESSIONS"
+    student_url = (
+        f"/api/academies/{academy['id']}/students/{student['id']}"
     )
 
-    completed = client.post(
-        (
-            f"/api/academies/{academy['id']}/attendance-records/"
-            f"{attendance['id']}/complete"
-        ),
-        json={},
-    )
-    assert completed.status_code == 200
+    assert issued["remaining_sessions"] == 1
+    assert client.get(student_url).json()["expire_date"] is not None
+
+    # 남은 횟수가 있어도 삭제할 수 있다(회원 포털 요구사항).
     assert client.delete(pass_url).status_code == 204
+
+    # 남은 수강권이 없으므로 회원 만료일은 비워진다.
+    assert client.get(student_url).json()["expire_date"] is None
 
     preserved = client.get(
         (
